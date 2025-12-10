@@ -21,26 +21,26 @@
     "utilities",
     "education"
   ],
+  "iarc_rating_id": "",
   "prefer_related_applications": false,
-  "related_applications": [],
   "launch_handler": {
     "client_mode": "focus-existing"
   },
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "https://placehold.co/192x192/09090b/ffffff/png?text=PDF+192",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "https://placehold.co/512x512/09090b/ffffff/png?text=PDF+512",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512-maskable.png",
+      "src": "https://placehold.co/512x512/09090b/ffffff/png?text=Maskable",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable any"
@@ -54,7 +54,7 @@
       "url": "/?mode=browser&utm_source=pwa",
       "icons": [
         {
-          "src": "/icons/shortcut-files-192.png",
+          "src": "https://placehold.co/192x192/09090b/ffffff/png?text=Files",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -67,7 +67,7 @@
       "url": "/?mode=mindmaps&utm_source=pwa",
       "icons": [
         {
-          "src": "/icons/shortcut-mindmap-192.png",
+          "src": "https://placehold.co/192x192/09090b/ffffff/png?text=MindMap",
           "sizes": "192x192",
           "type": "image/png"
         }
@@ -94,7 +94,7 @@
       },
       "icons": [
         {
-          "src": "/icons/filehandler-512.png",
+          "src": "https://placehold.co/512x512/09090b/ffffff/png?text=File",
           "sizes": "512x512",
           "type": "image/png"
         }
@@ -123,18 +123,18 @@
   },
   "screenshots": [
     {
-      "src": "/images/screenshots/wide-1280x720.jpg",
+      "src": "https://placehold.co/1280x720/09090b/ffffff/png?text=Desktop+Screenshot",
       "sizes": "1280x720",
-      "type": "image/jpeg",
+      "type": "image/png",
       "form_factor": "wide",
-      "label": "Visualizador de PDF - modo escuro"
+      "label": "Visualizador de PDF - Desktop"
     },
     {
-      "src": "/images/screenshots/narrow-400x800.jpg",
-      "sizes": "400x800",
-      "type": "image/jpeg",
+      "src": "https://placehold.co/360x800/09090b/ffffff/png?text=Mobile+Screenshot",
+      "sizes": "360x800",
+      "type": "image/png",
       "form_factor": "narrow",
-      "label": "Lista de arquivos - mobile"
+      "label": "Lista de arquivos - Mobile"
     }
   ]
 }
