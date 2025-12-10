@@ -120,15 +120,41 @@ export async function syncPendingAnnotations() {
 
 // --- Offline Files Logic ---
 
-export async function saveOfflineFile(fileId: string, blob: Blob) {
+/**
+ * Salva o arquivo e seus metadados para uso offline.
+ * Agora exige o objeto 'file' completo (ou parcial) para reconstruir a lista.
+ */
+export async function saveOfflineFile(file: DriveFile, blob: Blob) {
   const idb = await dbPromise;
-  await idb.put("offlineFiles", { id: fileId, blob, storedAt: Date.now() });
+  // Removemos o blob do objeto file para não duplicar, salvamos o blob explicitamente
+  const { blob: _, ...metadata } = file;
+  
+  await idb.put("offlineFiles", { 
+    ...metadata,
+    id: file.id, 
+    blob, 
+    storedAt: Date.now() 
+  });
 }
 
 export async function getOfflineFile(fileId: string): Promise<Blob | undefined> {
   const idb = await dbPromise;
   const record = await idb.get("offlineFiles", fileId);
   return record?.blob;
+}
+
+export async function listOfflineFiles(): Promise<DriveFile[]> {
+  const idb = await dbPromise;
+  const records = await idb.getAll("offlineFiles");
+  return records.map(rec => ({
+    id: rec.id,
+    name: rec.name,
+    mimeType: rec.mimeType,
+    thumbnailLink: rec.thumbnailLink,
+    parents: rec.parents,
+    starred: rec.starred,
+    blob: rec.blob // Retornamos o blob já anexado para facilitar
+  }));
 }
 
 export async function deleteOfflineFile(fileId: string) {

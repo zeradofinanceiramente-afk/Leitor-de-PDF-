@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { listDriveContents, searchMindMaps, renameDriveFile, deleteDriveFile, moveDriveFile, downloadDriveFile } from '../services/driveService';
-import { getOfflineFileIds, saveOfflineFile, deleteOfflineFile, getOfflineFile } from '../services/storageService';
+import { getOfflineFileIds, saveOfflineFile, deleteOfflineFile, getOfflineFile, listOfflineFiles } from '../services/storageService';
 import { DriveFile } from '../types';
-import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, Menu, Folder, ChevronRight, Home, HardDrive, Users, Star, MoreVertical, Trash2, Edit2, FolderInput, X, Check, ArrowLeft, Workflow, Plus, Share2, Wifi, WifiOff, Cloud } from 'lucide-react';
+import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, Menu, Folder, ChevronRight, Home, HardDrive, Users, Star, MoreVertical, Trash2, Edit2, FolderInput, X, Check, ArrowLeft, Workflow, Plus, Share2, Wifi, WifiOff, Cloud, CheckCircle2 } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -42,6 +42,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isOfflineMode, setIsOfflineMode] = useState(!navigator.onLine);
 
   // Action States
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -60,6 +61,15 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   // Refresh offline status
   useEffect(() => {
     getOfflineFileIds().then(ids => setOfflineFiles(new Set(ids)));
+    
+    const handleOnline = () => setIsOfflineMode(false);
+    const handleOffline = () => setIsOfflineMode(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+    };
   }, [files]);
 
   useEffect(() => {
@@ -68,46 +78,70 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     setError(null);
     setSearch('');
 
-    const fetcher = currentFolder.id === 'mindmaps' 
-        ? searchMindMaps(accessToken) 
-        : listDriveContents(accessToken, currentFolder.id);
+    // Lógica principal de carregamento
+    const loadFiles = async () => {
+        try {
+            // Se estiver offline, carrega direto do banco local
+            if (!navigator.onLine) {
+                const localFiles = await listOfflineFiles();
+                if (mounted) {
+                    setFiles(localFiles);
+                    setFilteredFiles(localFiles);
+                    setLoading(false);
+                }
+                return;
+            }
 
-    fetcher
-      .then(data => {
-        if (mounted) {
-          let sorted = data;
-          
-          // Custom Sort for normal folders
-          if (currentFolder.id !== 'mindmaps') {
-             sorted = data.sort((a, b) => {
-                const isFolderA = a.mimeType === 'application/vnd.google-apps.folder';
-                const isFolderB = b.mimeType === 'application/vnd.google-apps.folder';
-                
-                if (isFolderA && !isFolderB) return -1;
-                if (!isFolderA && isFolderB) return 1;
-                return a.name.localeCompare(b.name);
-             });
-          }
-          
-          setFiles(sorted);
-          setFilteredFiles(sorted);
+            // Tenta carregar do Drive
+            const fetcher = currentFolder.id === 'mindmaps' 
+                ? searchMindMaps(accessToken) 
+                : listDriveContents(accessToken, currentFolder.id);
+
+            const data = await fetcher;
+            
+            if (mounted) {
+                let sorted = data;
+                if (currentFolder.id !== 'mindmaps') {
+                    sorted = data.sort((a, b) => {
+                        const isFolderA = a.mimeType === 'application/vnd.google-apps.folder';
+                        const isFolderB = b.mimeType === 'application/vnd.google-apps.folder';
+                        if (isFolderA && !isFolderB) return -1;
+                        if (!isFolderA && isFolderB) return 1;
+                        return a.name.localeCompare(b.name);
+                    });
+                }
+                setFiles(sorted);
+                setFilteredFiles(sorted);
+            }
+        } catch (err: any) {
+            console.error("Erro ao carregar arquivos:", err);
+            
+            // Fallback: Se falhar (ex: token inválido ou erro de rede disfarçado), tenta carregar offline
+            try {
+                const localFiles = await listOfflineFiles();
+                if (mounted && localFiles.length > 0) {
+                     setFiles(localFiles);
+                     setFilteredFiles(localFiles);
+                     setError(null); // Limpa erro se conseguiu carregar offline
+                } else {
+                    if (err.message === "Unauthorized" || err.message.includes("401")) {
+                        onAuthError();
+                    } else {
+                        setError(err.message);
+                    }
+                }
+            } catch (localErr) {
+                 if (mounted) setError(err.message);
+            }
+        } finally {
+            if (mounted) setLoading(false);
         }
-      })
-      .catch(err => {
-        if (mounted) {
-          console.error(err);
-          if (err.message === "Unauthorized" || err.message.includes("401")) {
-            onAuthError();
-          } else {
-            setError(err.message);
-          }
-        }
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+    };
+
+    loadFiles();
+
     return () => { mounted = false; };
-  }, [accessToken, currentFolder.id, onAuthError]);
+  }, [accessToken, currentFolder.id, onAuthError, isOfflineMode]);
 
   useEffect(() => {
     const results = files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()));
@@ -281,7 +315,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                  blob = await downloadDriveFile(accessToken, actionFile.id);
             }
             if (blob) {
-                await saveOfflineFile(actionFile.id, blob);
+                await saveOfflineFile(actionFile, blob); // Agora passa o objeto completo
                 setOfflineFiles(prev => new Set(prev).add(actionFile.id));
             }
         }
@@ -625,8 +659,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                                 )}
                                 
                                 {isOffline && (
-                                    <div className="absolute top-4 left-4 bg-surface/80 backdrop-blur p-1.5 rounded-full shadow-sm border border-border z-10">
-                                        <WifiOff size={16} className="text-text-sec" />
+                                    <div className="absolute top-4 left-4 bg-black p-1.5 rounded-full shadow-lg border border-[#39FF14] z-10 text-[#39FF14] flex items-center justify-center">
+                                        <Check size={14} strokeWidth={4} />
                                     </div>
                                 )}
                                 {file.starred && (
@@ -668,8 +702,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                                  <FileText size={28} />}
                                  
                                 {isOffline && (
-                                    <div className="absolute -top-1 -left-1 bg-surface rounded-full border border-border p-0.5">
-                                        <WifiOff size={12} className="text-text-sec" />
+                                    <div className="absolute -top-1 -left-1 bg-black rounded-full border border-[#39FF14] p-0.5 text-[#39FF14]">
+                                        <Check size={10} strokeWidth={4} />
                                     </div>
                                 )}
                               </div>
@@ -711,7 +745,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                                                     onClick={handleToggleOfflineClick}
                                                     className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
                                                 >
-                                                    {isOffline ? <WifiOff size={16} /> : <Wifi size={16} />}
+                                                    {isOffline ? <CheckCircle2 size={16} className="text-green-500" /> : <Wifi size={16} />}
                                                     {isOffline ? "Remover Offline" : "Disponibilizar Offline"}
                                                 </button>
                                                 <div className="h-px bg-border my-1"></div>
@@ -772,6 +806,8 @@ const MoveFileModal: React.FC<MoveFileModalProps> = ({ accessToken, file, onClos
   useEffect(() => {
     let active = true;
     setLoading(true);
+    // Move Modal: Still tries to fetch online folders to move to
+    // If offline, this will naturally fail or show empty
     listDriveContents(accessToken, currentFolder.id)
       .then(contents => {
         if (active) {

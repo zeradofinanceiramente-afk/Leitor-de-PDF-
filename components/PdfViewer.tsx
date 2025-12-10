@@ -139,7 +139,8 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
       // Queue Logic for Offline Mode
       if (!isLocal && !navigator.onLine && accessToken) {
           // 1. Save locally to ensure user has access immediately
-          await saveOfflineFile(fileId, newBlob);
+          const fileMeta = { id: fileId, name: fileName, mimeType: 'application/pdf', parents: fileParents };
+          await saveOfflineFile(fileMeta, newBlob);
           setIsOfflineAvailable(true);
           
           // 2. Add to Sync Queue
@@ -166,7 +167,8 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
               
               // If previously marked offline, update the offline copy too
               if (isOfflineAvailable) {
-                  await saveOfflineFile(fileId, newBlob);
+                  const fileMeta = { id: fileId, name: fileName, mimeType: 'application/pdf', parents: fileParents };
+                  await saveOfflineFile(fileMeta, newBlob);
               }
               
               alert("Arquivo atualizado com sucesso!");
