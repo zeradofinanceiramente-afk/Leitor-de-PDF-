@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.pages.pdf_reader_app.twa",
+      "sha256_cert_fingerprints": [
+        "EA:A1:02:EB:DB:0A:FF:40:6E:94:6B:C0:82:68:A3:68:CE:F5:EA:64:9A:B5:93:94:F2:87:3D:4B:47:21:EC:C7"
+      ]
+    }
+  }
+]

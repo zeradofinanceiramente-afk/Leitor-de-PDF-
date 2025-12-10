@@ -1,0 +1,144 @@
+{
+  "id": "/",
+  "scope": "/",
+  "name": "Leitor de PDF",
+  "short_name": "Leitor de PDF",
+  "description": "Um PWA serverless para visualizar PDFs do Google Drive, fazer anotações e sincronizar com Firestore.",
+  "lang": "pt-BR",
+  "categories": [
+    "productivity",
+    "utilities",
+    "education"
+  ],
+  "start_url": "/index.html",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "any",
+  "prefer_related_applications": false,
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1280&auto=format&fit=crop",
+      "sizes": "1280x720",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Visualizador de PDF com modo escuro"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=400&auto=format&fit=crop",
+      "sizes": "400x800",
+      "type": "image/jpeg",
+      "form_factor": "narrow",
+      "label": "Lista de arquivos no celular"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Meus Arquivos",
+      "short_name": "Arquivos",
+      "description": "Abrir lista de arquivos do Drive",
+      "url": "/index.html?mode=browser",
+      "icons": [
+        {
+          "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Novo Mapa Mental",
+      "short_name": "Mapa Mental",
+      "description": "Criar um novo mapa mental",
+      "url": "/index.html?mode=mindmaps",
+      "icons": [
+        {
+          "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+pdf",
+      "url": "/index.html?file=%s"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/index.html",
+      "accept": {
+        "application/pdf": [
+          ".pdf"
+        ],
+        "application/json": [
+          ".mindmap",
+          ".json"
+        ]
+      },
+      "icons": [
+        {
+          "src": "https://cdn-icons-png.flaticon.com/512/337/337946.png",
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ],
+      "launch_type": "single-client"
+    }
+  ],
+  "share_target": {
+    "action": "/index.html",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "application/pdf",
+            ".pdf",
+            ".mindmap",
+            "application/json"
+          ]
+        }
+      ]
+    }
+  }
+}
