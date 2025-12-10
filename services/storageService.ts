@@ -2,7 +2,7 @@ import { openDB } from "idb";
 import { Annotation, DriveFile } from "../types";
 
 // --- IndexedDB Setup ---
-const dbPromise = openDB("pwa-drive-annotator", 5, { // Incremented to version 5
+const dbPromise = openDB("pwa-drive-annotator", 4, {
   upgrade(db, oldVersion, newVersion, transaction) {
     // Store para anotações locais
     if (!db.objectStoreNames.contains("annotations")) {
@@ -21,20 +21,9 @@ const dbPromise = openDB("pwa-drive-annotator", 5, { // Incremented to version 5
       store.createIndex("lastOpened", "lastOpened");
     }
 
-    // Store para Mapas Mentais
+    // NEW: Store para Mapas Mentais
     if (!db.objectStoreNames.contains("mindmaps")) {
       db.createObjectStore("mindmaps", { keyPath: "id" });
-    }
-
-    // NEW: Store para Cache de Listagem de Pastas (Estrutura)
-    if (!db.objectStoreNames.contains("driveCache")) {
-      db.createObjectStore("driveCache", { keyPath: "folderId" });
-    }
-
-    // NEW: Store para Arquivos Offline (Binário)
-    if (!db.objectStoreNames.contains("offlineFiles")) {
-      const store = db.createObjectStore("offlineFiles", { keyPath: "id" });
-      store.createIndex("dirty", "dirty"); // Índice para achar arquivos pendentes de sync
     }
   }
 });
@@ -43,12 +32,8 @@ const dbPromise = openDB("pwa-drive-annotator", 5, { // Incremented to version 5
 
 export async function addRecentFile(file: DriveFile) {
   const idb = await dbPromise;
-  // Remove blob from recent files to save space, we only need metadata there
-  // (Actual blob is stored in offlineFiles if user requested offline access)
-  const { blob, ...fileData } = file;
-  
   await idb.put("recentFiles", {
-    ...fileData,
+    ...file,
     lastOpened: new Date()
   });
 }
@@ -116,65 +101,6 @@ export async function getMindMap(id: string): Promise<MindMapData | undefined> {
 export async function deleteMindMap(id: string) {
   const idb = await dbPromise;
   await idb.delete("mindmaps", id);
-}
-
-// --- OFFLINE & CACHE LOGIC ---
-
-// 1. Folder Structure Cache
-export async function cacheDriveList(folderId: string, files: DriveFile[]) {
-  const idb = await dbPromise;
-  // Remove blobs before caching structure to keep it light
-  const lightweightFiles = files.map(({ blob, ...f }) => f);
-  await idb.put("driveCache", {
-    folderId,
-    files: lightweightFiles,
-    cachedAt: Date.now()
-  });
-}
-
-export async function getCachedDriveList(folderId: string): Promise<DriveFile[] | null> {
-  const idb = await dbPromise;
-  const data = await idb.get("driveCache", folderId);
-  return data ? data.files : null;
-}
-
-// 2. Offline Binary Files
-export interface OfflineFile extends DriveFile {
-  blob: Blob;
-  dirty: boolean; // True if modified offline and needs sync
-  syncedAt: number;
-}
-
-export async function saveOfflineFile(file: DriveFile, blob: Blob, dirty: boolean = false) {
-  const idb = await dbPromise;
-  const offlineData: OfflineFile = {
-    ...file,
-    blob,
-    dirty,
-    syncedAt: Date.now()
-  };
-  await idb.put("offlineFiles", offlineData);
-}
-
-export async function getOfflineFile(id: string): Promise<OfflineFile | undefined> {
-  const idb = await dbPromise;
-  return await idb.get("offlineFiles", id);
-}
-
-export async function removeOfflineFile(id: string) {
-  const idb = await dbPromise;
-  await idb.delete("offlineFiles", id);
-}
-
-export async function getDirtyFiles(): Promise<OfflineFile[]> {
-  const idb = await dbPromise;
-  return await idb.getAllFromIndex("offlineFiles", "dirty", 1); // 1 = true (boolean index)
-}
-
-export async function isFileOffline(id: string): Promise<boolean> {
-  const idb = await dbPromise;
-  const keys = await idb.getAllKeys("offlineFiles");
-  return keys.includes(id);
 }
 
 export async function syncPendingAnnotations() {

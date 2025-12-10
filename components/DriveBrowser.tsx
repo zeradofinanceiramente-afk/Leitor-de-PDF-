@@ -1,9 +1,8 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { listDriveContents, searchMindMaps, renameDriveFile, deleteDriveFile, moveDriveFile, downloadDriveFile } from '../services/driveService';
-import { isFileOffline, saveOfflineFile, removeOfflineFile } from '../services/storageService';
+import { listDriveContents, searchMindMaps, renameDriveFile, deleteDriveFile, moveDriveFile } from '../services/driveService';
 import { DriveFile } from '../types';
-import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, Menu, Folder, ChevronRight, Home, HardDrive, Users, Star, MoreVertical, Trash2, Edit2, FolderInput, X, Check, ArrowLeft, Workflow, Plus, CheckCircle, WifiOff, Cloud, DownloadCloud } from 'lucide-react';
+import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, Menu, Folder, ChevronRight, Home, HardDrive, Users, Star, MoreVertical, Trash2, Edit2, FolderInput, X, Check, ArrowLeft, Workflow, Plus } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -40,10 +39,6 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  
-  // Offline State
-  const [offlineStatus, setOfflineStatus] = useState<Record<string, boolean>>({});
-  const [isProcessingOffline, setIsProcessingOffline] = useState(false);
 
   // Action States
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -58,21 +53,32 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
 
   const [showMoveModal, setShowMoveModal] = useState(false);
   
-  // Check offline status for loaded files
-  useEffect(() => {
-    const checkOffline = async () => {
-        const status: Record<string, boolean> = {};
-        for (const file of files) {
-            if (file.mimeType !== 'application/vnd.google-apps.folder') {
-                status[file.id] = await isFileOffline(file.id);
-            }
-        }
-        setOfflineStatus(status);
-    };
-    if (files.length > 0) {
-        checkOffline();
-    }
-  }, [files]);
+  const refreshFolder = () => {
+    setLoading(true);
+    const fetcher = currentFolder.id === 'mindmaps' 
+        ? searchMindMaps(accessToken) 
+        : listDriveContents(accessToken, currentFolder.id);
+
+    fetcher
+      .then(data => {
+        // Sort logic
+        const sorted = data.sort((a, b) => {
+          // If mindmaps mode, sort by modified time (desc) if available, or name
+          if (currentFolder.id === 'mindmaps') return 0; // Already sorted by query
+
+          const isFolderA = a.mimeType === 'application/vnd.google-apps.folder';
+          const isFolderB = b.mimeType === 'application/vnd.google-apps.folder';
+          
+          if (isFolderA && !isFolderB) return -1;
+          if (!isFolderA && isFolderB) return 1;
+          return a.name.localeCompare(b.name);
+        });
+        setFiles(sorted);
+        setFilteredFiles(sorted);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -89,6 +95,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
         if (mounted) {
           let sorted = data;
           
+          // Custom Sort for normal folders
           if (currentFolder.id !== 'mindmaps') {
              sorted = data.sort((a, b) => {
                 const isFolderA = a.mimeType === 'application/vnd.google-apps.folder';
@@ -125,6 +132,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     setFilteredFiles(results);
   }, [search, files]);
 
+  // Click outside to close menu
   useEffect(() => {
     const handleClickOutside = () => setActiveMenuId(null);
     window.addEventListener('click', handleClickOutside);
@@ -146,6 +154,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
 
   const handleBreadcrumbClick = (item: BreadcrumbItem, index: number) => {
     if (mode === 'mindmaps' && index === 0 && item.id === 'mindmaps') {
+        // If clicking root of mindmaps, just reset (although breadcrumbs barely used here)
         setCurrentFolder({ id: 'mindmaps', name: 'Meus Mapas Mentais' });
         setBreadcrumbs([]);
         return;
@@ -172,45 +181,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     }
   };
 
-  // --- Actions Handlers ---
-
-  const handleToggleOffline = async (e: React.MouseEvent, file: DriveFile) => {
-      e.stopPropagation();
-      setIsProcessingOffline(true);
-      setActiveMenuId(null); // Close menu
-      
-      try {
-          const isOffline = offlineStatus[file.id];
-          
-          if (isOffline) {
-              // Remove
-              await removeOfflineFile(file.id);
-              setOfflineStatus(prev => ({ ...prev, [file.id]: false }));
-              alert("Arquivo removido do armazenamento offline.");
-          } else {
-              // Add (Download & Save)
-              if (!navigator.onLine) {
-                  alert("Você precisa estar online para tornar este arquivo disponível offline.");
-                  return;
-              }
-              
-              // Visual Feedback (Toast could be better, using alert/console for simplicity)
-              console.log("Baixando para offline...");
-              
-              const blob = await downloadDriveFile(accessToken, file.id);
-              await saveOfflineFile(file, blob, false);
-              
-              setOfflineStatus(prev => ({ ...prev, [file.id]: true }));
-              alert("Arquivo baixado! Agora disponível offline.");
-          }
-      } catch (err: any) {
-          console.error("Erro ao gerenciar offline:", err);
-          alert("Erro: " + err.message);
-      } finally {
-          setIsProcessingOffline(false);
-      }
-  };
-
+  // Actions Handlers
   const openActionMenu = (e: React.MouseEvent, file: DriveFile) => {
     e.stopPropagation();
     setActiveMenuId(file.id);
@@ -231,9 +202,10 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     setIsRenaming(true);
     try {
       await renameDriveFile(accessToken, actionFile.id, renameValue);
+      // Update local state
       const updatedFiles = files.map(f => f.id === actionFile.id ? { ...f, name: renameValue } : f);
       setFiles(updatedFiles);
-      setFilteredFiles(updatedFiles);
+      setFilteredFiles(updatedFiles); // Assuming search is cleared or re-runs
       setShowRenameModal(false);
     } catch (e: any) {
       alert("Erro ao renomear: " + e.message);
@@ -255,6 +227,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     setIsDeleting(true);
     try {
       await deleteDriveFile(accessToken, actionFile.id);
+      // Update local state
       const updatedFiles = files.filter(f => f.id !== actionFile.id);
       setFiles(updatedFiles);
       setFilteredFiles(updatedFiles);
@@ -274,6 +247,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     }
   };
 
+  // Determine current active section for sidebar highlighting
   const activeSectionId = breadcrumbs.length > 0 ? breadcrumbs[0].id : currentFolder.id;
 
   if (error) {
@@ -297,7 +271,6 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   return (
     <div className="flex h-full bg-bg text-text overflow-hidden">
       
-      {/* Modals omitted for brevity, logic identical to original ... */}
       {/* Rename Modal */}
       {showRenameModal && actionFile && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in">
@@ -351,13 +324,14 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
            onClose={() => setShowMoveModal(false)}
            onSuccess={() => {
               setShowMoveModal(false);
+              // Remove file from current view instantly as it moved
               setFiles(prev => prev.filter(f => f.id !== actionFile.id));
               setFilteredFiles(prev => prev.filter(f => f.id !== actionFile.id));
            }}
          />
       )}
 
-      {/* Drive Sidebar (Desktop) */}
+      {/* Drive Sidebar (Desktop) - HIDDEN IF IN MINDMAPS MODE */}
       {mode !== 'mindmaps' && (
         <div className="hidden md:flex flex-col w-80 bg-surface/30 border-r border-border p-6 gap-3 shrink-0">
           <div className="text-sm font-bold text-text-sec uppercase tracking-wider mb-2 px-4">Organização</div>
@@ -436,7 +410,31 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
             </div>
           </div>
 
-          {/* Breadcrumbs */}
+          {/* Mobile Tabs (Hidden in Mindmaps Mode) */}
+          {mode !== 'mindmaps' && (
+            <div className="md:hidden flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none -mx-6 px-6">
+               {SECTIONS.map(section => {
+                  const Icon = section.icon;
+                  const isActive = activeSectionId === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      onClick={() => handleSectionClick(section.id)}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap border transition-all ${
+                        isActive 
+                          ? 'bg-brand/10 border-brand/20 text-brand' 
+                          : 'bg-surface border-border text-text-sec'
+                      }`}
+                    >
+                      <Icon size={16} />
+                      <span>{section.name}</span>
+                    </button>
+                  );
+               })}
+            </div>
+          )}
+
+          {/* Breadcrumbs - Only show if traversing folders, or if not in flat mindmap mode */}
           {mode !== 'mindmaps' && (
             <div className="flex items-center gap-2 overflow-x-auto pb-4 scrollbar-none text-base min-h-[40px]">
                {breadcrumbs.length > 0 && (
@@ -492,7 +490,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
           )}
         </div>
 
-        {/* File List */}
+        {/* File List Content */}
         <div className="flex-1 overflow-y-auto px-6 md:px-10 pb-24 custom-scrollbar">
           {loading && (
             <div className="flex flex-col h-full items-center justify-center gap-4 opacity-50">
@@ -506,11 +504,21 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                {filteredFiles.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-80 text-text-sec/50 gap-6">
                      <Folder size={80} strokeWidth={1} />
-                     <p className="text-xl">Pasta vazia</p>
+                     <p className="text-xl">
+                        {mode === 'mindmaps' 
+                            ? 'Nenhum mapa mental encontrado.' 
+                            : 'Esta pasta está vazia.'}
+                     </p>
+                     {mode === 'mindmaps' && onCreateMindMap && (
+                         <button onClick={onCreateMindMap} className="text-brand font-bold hover:underline">
+                            Criar um agora
+                         </button>
+                     )}
                   </div>
                ) : (
                  <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 pb-10" : "flex flex-col gap-4 pb-10"}>
-                    {/* Back button logic same as before... */}
+                    
+                    {/* Back Button (Virtual) - Only in default mode */}
                     {mode !== 'mindmaps' && breadcrumbs.length > 0 && search === '' && (
                         viewMode === 'grid' ? (
                           <button
@@ -528,7 +536,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                               <span className="text-lg text-text-sec">Voltar</span>
                           </button>
                         ) : (
-                            <button
+                          <button
                             onClick={() => {
                                 const prev = breadcrumbs[breadcrumbs.length - 1];
                                 setBreadcrumbs(breadcrumbs.slice(0, -1));
@@ -548,7 +556,6 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                       const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
                       const isMindMap = file.name.endsWith('.mindmap');
                       const isMenuOpen = activeMenuId === file.id;
-                      const isOffline = offlineStatus[file.id];
 
                       return (
                         <div key={file.id} className="relative group">
@@ -580,16 +587,16 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                               </div>
 
                               <div className="p-6 flex flex-col flex-1 w-full relative">
-                                 <div className="flex-1 pr-6 flex items-start justify-between">
+                                 <div className="flex-1 pr-6">
                                     <p className="font-medium text-text group-hover:text-brand transition-colors text-lg leading-tight line-clamp-2" title={file.name}>
                                       {file.name}
                                     </p>
-                                    {isOffline && <CheckCircle size={18} className="text-green-500 shrink-0 ml-2" />}
                                  </div>
                                  <p className="text-sm text-text-sec mt-3">
                                     {isFolder ? 'Pasta' : isMindMap ? 'Mapa Mental' : 'PDF'}
                                  </p>
                                  
+                                 {/* Grid Menu Button */}
                                  <div className="absolute right-4 bottom-4">
                                      <div 
                                       className="p-2 rounded-full hover:bg-bg/50 text-text-sec hover:text-text transition-colors"
@@ -610,14 +617,14 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                                  isMindMap ? <Workflow size={28} /> :
                                  <FileText size={28} />}
                               </div>
-                              <div className="flex-1 min-w-0 flex items-center gap-2">
+                              <div className="flex-1 min-w-0">
                                 <p className="font-medium truncate text-text text-lg">{file.name}</p>
-                                {isOffline && <CheckCircle size={16} className="text-green-500" />}
                               </div>
                               <span className="text-base text-text-sec hidden sm:block w-32">
                                 {isFolder ? 'Pasta' : isMindMap ? 'Mapa Mental' : 'PDF'}
                               </span>
                               
+                              {/* List Menu Button */}
                               <div 
                                 className="p-2 rounded-full hover:bg-bg text-text-sec hover:text-text transition-colors shrink-0"
                                 onClick={(e) => openActionMenu(e, file)}
@@ -629,20 +636,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
 
                           {/* Action Dropdown Menu */}
                           {isMenuOpen && (
-                             <div className="absolute z-30 right-4 bottom-10 md:bottom-auto md:top-10 bg-surface border border-border rounded-xl shadow-2xl p-1.5 flex flex-col min-w-[180px] animate-in zoom-in-95 duration-100 origin-top-right">
-                                {!isFolder && (
-                                    <>
-                                        <button 
-                                            onClick={(e) => handleToggleOffline(e, file)} 
-                                            disabled={isProcessingOffline}
-                                            className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
-                                        >
-                                            {isOffline ? <WifiOff size={16} className="text-text-sec"/> : <DownloadCloud size={16} className="text-brand"/>}
-                                            {isOffline ? 'Remover Offline' : 'Disponível Offline'}
-                                        </button>
-                                        <div className="h-px bg-border my-1"></div>
-                                    </>
-                                )}
+                             <div className="absolute z-30 right-4 bottom-10 md:bottom-auto md:top-10 bg-surface border border-border rounded-xl shadow-2xl p-1.5 flex flex-col min-w-[160px] animate-in zoom-in-95 duration-100 origin-top-right">
                                 <button 
                                   onClick={handleRenameClick} 
                                   className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
@@ -677,7 +671,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   );
 };
 
-// ... MoveFileModal Component (unchanged) ...
+
+// --- Sub Component: Move File Modal ---
 interface MoveFileModalProps {
   accessToken: string;
   file: DriveFile;
@@ -686,114 +681,119 @@ interface MoveFileModalProps {
 }
 
 const MoveFileModal: React.FC<MoveFileModalProps> = ({ accessToken, file, onClose, onSuccess }) => {
-    // ... Copy-paste existing logic here, omitted for brevity as it is unchanged ...
-    const [currentFolder, setCurrentFolder] = useState<BreadcrumbItem>({ id: 'root', name: 'Meu Drive' });
-    const [folderHistory, setFolderHistory] = useState<BreadcrumbItem[]>([]);
-    const [folders, setFolders] = useState<DriveFile[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [moving, setMoving] = useState(false);
-  
-    useEffect(() => {
-      let active = true;
-      setLoading(true);
-      listDriveContents(accessToken, currentFolder.id)
-        .then(contents => {
-          if (active) {
-              const onlyFolders = contents.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
-              setFolders(onlyFolders.sort((a, b) => a.name.localeCompare(b.name)));
-          }
-        })
-        .catch(console.error)
-        .finally(() => { if (active) setLoading(false); });
-      return () => { active = false; };
-    }, [accessToken, currentFolder]);
-  
-    const handleFolderClick = (folder: DriveFile) => {
-      setFolderHistory(prev => [...prev, currentFolder]);
-      setCurrentFolder({ id: folder.id, name: folder.name });
-    };
-  
-    const handleBack = () => {
-      if (folderHistory.length === 0) return;
-      const prev = folderHistory[folderHistory.length - 1];
-      setFolderHistory(prevH => prevH.slice(0, -1));
-      setCurrentFolder(prev);
-    };
-  
-    const handleMove = async () => {
-      setMoving(true);
-      try {
-          await moveDriveFile(
-              accessToken, 
-              file.id, 
-              file.parents || [], 
-              currentFolder.id
-          );
-          onSuccess();
-      } catch (e: any) {
-          alert("Erro ao mover: " + e.message);
-          setMoving(false);
-      }
-    };
-  
-    return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in" onClick={e => e.stopPropagation()}>
-        <div className="bg-surface border border-border rounded-2xl flex flex-col max-w-md w-full max-h-[80vh] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-border flex items-center gap-3">
-               {folderHistory.length > 0 && (
-                  <button onClick={handleBack} className="p-1.5 hover:bg-white/5 rounded-full text-text-sec hover:text-text">
-                     <ArrowLeft size={20} />
-                  </button>
-               )}
-               <h3 className="text-lg font-bold text-text truncate flex-1">
-                  {currentFolder.name}
-               </h3>
-               <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-full text-text-sec hover:text-text">
-                  <X size={20} />
-               </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar min-h-[300px]">
-               {loading ? (
-                  <div className="flex items-center justify-center h-40">
-                     <Loader2 size={24} className="animate-spin text-brand" />
-                  </div>
-               ) : folders.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-40 text-text-sec opacity-50">
-                      <Folder size={40} strokeWidth={1} className="mb-2"/>
-                      <p className="text-sm">Pasta vazia</p>
-                  </div>
-               ) : (
-                  <div className="space-y-1">
-                     {folders.map(f => (
-                        <button 
-                          key={f.id}
-                          onClick={() => handleFolderClick(f)}
-                          className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-left transition-colors group"
-                        >
-                           <div className="bg-blue-500/10 text-blue-400 p-2 rounded-lg">
-                              <Folder size={20} fill="currentColor" className="opacity-70"/>
-                           </div>
-                           <span className="text-text flex-1 truncate">{f.name}</span>
-                           <ChevronRight size={16} className="text-text-sec opacity-0 group-hover:opacity-100"/>
-                        </button>
-                     ))}
-                  </div>
-               )}
-            </div>
-            <div className="p-4 border-t border-border flex justify-between items-center bg-bg/50">
-               <div className="text-xs text-text-sec">
-                  Movendo: <strong>{file.name}</strong>
-               </div>
-               <button 
-                  onClick={handleMove} 
-                  disabled={moving}
-                  className="px-4 py-2 bg-brand text-bg font-bold rounded-lg flex items-center gap-2 hover:brightness-110 disabled:opacity-50 transition-all"
-               >
-                  {moving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                  Mover Aqui
-               </button>
-            </div>
-        </div>
-      </div>
-    );
+  const [currentFolder, setCurrentFolder] = useState<BreadcrumbItem>({ id: 'root', name: 'Meu Drive' });
+  const [folderHistory, setFolderHistory] = useState<BreadcrumbItem[]>([]);
+  const [folders, setFolders] = useState<DriveFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [moving, setMoving] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    listDriveContents(accessToken, currentFolder.id)
+      .then(contents => {
+        if (active) {
+            // Filter only folders
+            const onlyFolders = contents.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+            setFolders(onlyFolders.sort((a, b) => a.name.localeCompare(b.name)));
+        }
+      })
+      .catch(console.error)
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [accessToken, currentFolder]);
+
+  const handleFolderClick = (folder: DriveFile) => {
+    setFolderHistory(prev => [...prev, currentFolder]);
+    setCurrentFolder({ id: folder.id, name: folder.name });
   };
+
+  const handleBack = () => {
+    if (folderHistory.length === 0) return;
+    const prev = folderHistory[folderHistory.length - 1];
+    setFolderHistory(prevH => prevH.slice(0, -1));
+    setCurrentFolder(prev);
+  };
+
+  const handleMove = async () => {
+    setMoving(true);
+    try {
+        await moveDriveFile(
+            accessToken, 
+            file.id, 
+            file.parents || [], 
+            currentFolder.id
+        );
+        onSuccess();
+    } catch (e: any) {
+        alert("Erro ao mover: " + e.message);
+        setMoving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in" onClick={e => e.stopPropagation()}>
+      <div className="bg-surface border border-border rounded-2xl flex flex-col max-w-md w-full max-h-[80vh] shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+          {/* Header */}
+          <div className="p-4 border-b border-border flex items-center gap-3">
+             {folderHistory.length > 0 && (
+                <button onClick={handleBack} className="p-1.5 hover:bg-white/5 rounded-full text-text-sec hover:text-text">
+                   <ArrowLeft size={20} />
+                </button>
+             )}
+             <h3 className="text-lg font-bold text-text truncate flex-1">
+                {currentFolder.name}
+             </h3>
+             <button onClick={onClose} className="p-1.5 hover:bg-white/5 rounded-full text-text-sec hover:text-text">
+                <X size={20} />
+             </button>
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto p-2 custom-scrollbar min-h-[300px]">
+             {loading ? (
+                <div className="flex items-center justify-center h-40">
+                   <Loader2 size={24} className="animate-spin text-brand" />
+                </div>
+             ) : folders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-40 text-text-sec opacity-50">
+                    <Folder size={40} strokeWidth={1} className="mb-2"/>
+                    <p className="text-sm">Pasta vazia</p>
+                </div>
+             ) : (
+                <div className="space-y-1">
+                   {folders.map(f => (
+                      <button 
+                        key={f.id}
+                        onClick={() => handleFolderClick(f)}
+                        className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl text-left transition-colors group"
+                      >
+                         <div className="bg-blue-500/10 text-blue-400 p-2 rounded-lg">
+                            <Folder size={20} fill="currentColor" className="opacity-70"/>
+                         </div>
+                         <span className="text-text flex-1 truncate">{f.name}</span>
+                         <ChevronRight size={16} className="text-text-sec opacity-0 group-hover:opacity-100"/>
+                      </button>
+                   ))}
+                </div>
+             )}
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-border flex justify-between items-center bg-bg/50">
+             <div className="text-xs text-text-sec">
+                Movendo: <strong>{file.name}</strong>
+             </div>
+             <button 
+                onClick={handleMove} 
+                disabled={moving}
+                className="px-4 py-2 bg-brand text-bg font-bold rounded-lg flex items-center gap-2 hover:brightness-110 disabled:opacity-50 transition-all"
+             >
+                {moving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                Mover Aqui
+             </button>
+          </div>
+      </div>
+    </div>
+  );
+};
