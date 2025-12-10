@@ -1,9 +1,10 @@
+
 {
   "id": "/",
   "scope": "/",
   "name": "Leitor de PDF",
   "short_name": "Leitor de PDF",
-  "description": "PWA serverless para visualizar PDFs do Google Drive, anotar e sincronizar com Firestore.",
+  "description": "Um PWA serverless para visualizar PDFs do Google Drive, fazer anotações e sincronizar com Firestore.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "/?utm_source=pwa",
@@ -90,8 +91,13 @@
     {
       "action": "/?source=filehandler",
       "accept": {
-        "application/pdf": [".pdf"],
-        "application/json": [".mindmap", ".json"]
+        "application/pdf": [
+          ".pdf"
+        ],
+        "application/json": [
+          ".mindmap",
+          ".json"
+        ]
       },
       "icons": [
         {

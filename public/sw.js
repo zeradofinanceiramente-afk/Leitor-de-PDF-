@@ -1,146 +1,119 @@
-// Nome do cache
-const CACHE_NAME = 'pdf-annotator-v8-offline-ready';
 
-// Arquivos para cachear imediatamente (App Shell)
-const urlsToCache = [
+// Import Workbox
+importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox-sw.js');
+
+const CACHE_NAME = 'pdf-annotator-v10-workbox';
+const OFFLINE_PAGE = '/index.html';
+
+workbox.setConfig({
+  debug: false
+});
+
+// Force update on controller change
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
+// Assets to precache (App Shell + Critical CDNs)
+const APP_SHELL = [
   '/',
   '/index.html',
-  '/?utm_source=pwa', // Importante para o launcher do Android
   '/manifest.json',
-  
-  // Bibliotecas Essenciais (ImportMap)
   'https://cdn.tailwindcss.com',
   'https://aistudiocdn.com/react@^19.2.0',
   'https://aistudiocdn.com/react-dom@^19.2.0',
-  'https://aistudiocdn.com/firebase@^12.6.0', // Loader principal do Firebase
+  'https://aistudiocdn.com/firebase@^12.6.0',
   'https://aistudiocdn.com/lucide-react@^0.555.0',
   'https://aistudiocdn.com/pdf-lib@^1.17.1',
   'https://aistudiocdn.com/idb@^8.0.3',
   'https://aistudiocdn.com/vite@^7.2.6',
   'https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1',
-  
-  // PDF.js & Workers
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/+esm',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/web/pdf_viewer.css',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs',
-  
-  // ESM Externals
   'https://esm.sh/@google/genai',
   'https://esm.sh/react-window@1.8.10?external=react,react-dom',
   'https://esm.sh/react-virtualized-auto-sizer@1.0.24?external=react,react-dom',
-
-  // Assets Visuais e Fontes
   'https://cdn-icons-png.flaticon.com/512/337/337946.png',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap'
 ];
 
-// Instalação do SW
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[SW] Caching App Shell & Dependencies');
-        return cache.addAll(urlsToCache);
-      })
-      .then(() => self.skipWaiting())
+      .then((cache) => cache.addAll(APP_SHELL))
   );
 });
 
-// Ativação e limpeza de caches antigos
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('[SW] Clearing old cache', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    })
-      .then(() => self.clients.claim())
-  );
-});
+// 1. Navigation (HTML): Network First -> Fallback to Cache -> Fallback to Offline Page
+workbox.routing.registerRoute(
+  ({ request }) => request.mode === 'navigate',
+  new workbox.strategies.NetworkFirst({
+    cacheName: 'pages-cache',
+    networkTimeoutSeconds: 3,
+    plugins: [
+      new workbox.cacheableResponse.CacheableResponsePlugin({
+        statuses: [0, 200],
+      }),
+    ],
+  })
+);
 
-// Helper para validar se devemos cachear a resposta
-function isValidResponse(response) {
-  if (!response || response.status !== 200) return false;
-  // Permite 'basic' (mesmo domínio) e 'cors' (CDNs externos como aistudiocdn, jsdelivr, etc)
-  const type = response.type;
-  return type === 'basic' || type === 'cors';
-}
-
-// Estratégia de Fetch
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // 1. Ignorar requisições que não devem ser cacheadas (APIs, Manifest, etc)
-  // Nota: manifest.json está no cache, mas geralmente queremos ele fresco ou da rede. 
-  // Se estiver no cacheToUrls, será pego pela estratégia abaixo.
-  if (url.pathname.includes('.well-known') || 
-      url.pathname.endsWith('assetlinks.json') ||
-      url.protocol === 'chrome-extension:') {
-    return; // Network only
+// Catch-all for navigation requests to serve index.html (SPA support)
+workbox.routing.setCatchHandler(async ({ event }) => {
+  if (event.request.destination === 'document') {
+    return caches.match(OFFLINE_PAGE);
   }
-
-  // 2. Ignorar chamadas de API do Google/Firebase (Firestore, Drive, Auth), EXCETO Fontes
-  // url.hostname.includes('googleapis.com') bloquearia fonts.googleapis.com se não tratássemos.
-  if ((url.hostname.includes('googleapis.com') && !url.hostname.includes('fonts.googleapis.com')) || 
-      (url.hostname.includes('firebase') && !url.hostname.includes('cdn') && !url.hostname.includes('aistudiocdn')) || 
-      url.hostname.includes('firestore')) {
-    return; 
-  }
-
-  // 3. Estratégia Stale-While-Revalidate
-  event.respondWith(
-    caches.match(event.request, { ignoreSearch: url.pathname === '/' }) // Ignora query params apenas para a raiz
-      .then((cachedResponse) => {
-        // Se houver cache, retorna imediatamente
-        if (cachedResponse) {
-          // Atualiza o cache em segundo plano (se online)
-          fetch(event.request).then((networkResponse) => {
-            if (isValidResponse(networkResponse)) {
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, networkResponse.clone());
-              });
-            }
-          }).catch(() => {
-            // Falha silenciosa na atualização em background (offline)
-          });
-          
-          return cachedResponse;
-        }
-
-        // Se não houver cache, busca na rede
-        return fetch(event.request).then((networkResponse) => {
-          if (isValidResponse(networkResponse)) {
-             const responseToCache = networkResponse.clone();
-             caches.open(CACHE_NAME).then((cache) => {
-               cache.put(event.request, responseToCache);
-             });
-          }
-          return networkResponse;
-        });
-      })
-      .catch(() => {
-        // Fallback final para offline se tudo falhar.
-        // Se for uma navegação para HTML e falhar, poderíamos retornar uma página offline customizada.
-      })
-  );
+  return Response.error();
 });
 
-// --- CAPABILITIES STUBS (PWABuilder Detection) ---
-self.addEventListener('push', (event) => {
-  const title = 'Leitor de PDF';
-  const options = {
-    body: event.data ? event.data.text() : 'Nova notificação',
-    icon: 'https://cdn-icons-png.flaticon.com/512/337/337946.png',
-    badge: 'https://cdn-icons-png.flaticon.com/512/337/337946.png'
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
-});
+// 2. Scripts, Styles, & CDNs: Stale While Revalidate (Performance + Offline)
+workbox.routing.registerRoute(
+  ({ request, url }) => 
+    request.destination === 'script' || 
+    request.destination === 'style' ||
+    url.hostname.includes('cdn') || 
+    url.hostname.includes('esm.sh') ||
+    url.hostname.includes('aistudiocdn.com'),
+  new workbox.strategies.StaleWhileRevalidate({
+    cacheName: 'assets-cache',
+    plugins: [
+      new workbox.cacheableResponse.CacheableResponsePlugin({
+        statuses: [0, 200], // Handle opaque responses
+      }),
+    ],
+  })
+);
 
+// 3. Images & Fonts: Cache First (Long Term Caching)
+workbox.routing.registerRoute(
+  ({ request }) => request.destination === 'image' || request.destination === 'font',
+  new workbox.strategies.CacheFirst({
+    cacheName: 'static-resources',
+    plugins: [
+      new workbox.expiration.ExpirationPlugin({
+        maxEntries: 60,
+        maxAgeSeconds: 30 * 24 * 60 * 60, // 30 Days
+      }),
+      new workbox.cacheableResponse.CacheableResponsePlugin({
+        statuses: [0, 200],
+      }),
+    ],
+  })
+);
+
+// 4. API Calls: Network Only (Let app handle errors)
+workbox.routing.registerRoute(
+  ({ url }) => 
+    url.hostname.includes('googleapis.com') || 
+    url.hostname.includes('firebase') || 
+    url.hostname.includes('firestore'),
+  new workbox.strategies.NetworkOnly()
+);
+
+// Background Sync stub (for future use)
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-annotations') {
     console.log('[SW] Background sync triggered');
