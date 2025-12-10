@@ -1,8 +1,10 @@
+
 import React, { useState } from 'react';
-import { Home, FolderOpen, LogOut, User as UserIcon, X, Palette, ChevronDown, ChevronRight, FileText, Workflow } from 'lucide-react';
+import { Home, FolderOpen, LogOut, User as UserIcon, X, Palette, ChevronDown, ChevronRight, FileText, Workflow, DownloadCloud, CheckCircle, Loader2 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { DriveFile } from '../types';
+import { cacheAppResources } from '../services/offlineService';
 
 interface SidebarProps {
   activeTab: string;
@@ -28,6 +30,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
   docked = true
 }) => {
   const [isThemesOpen, setIsThemesOpen] = useState(false);
+  
+  // Offline Download State
+  const [cachingStatus, setCachingStatus] = useState<'idle' | 'caching' | 'done'>('idle');
+  const [cacheProgress, setCacheProgress] = useState(0);
+  const [downloadSize, setDownloadSize] = useState<string | null>(null);
+
+  const handleDownloadOffline = async () => {
+    setCachingStatus('caching');
+    setCacheProgress(0);
+    setDownloadSize(null);
+    try {
+        const size = await cacheAppResources((progress) => setCacheProgress(progress));
+        setDownloadSize(size);
+        setCachingStatus('done');
+        // Keep "Done" state visible longer if we have size info
+        setTimeout(() => {
+             // Optional: Reset to idle or keep done
+             // setCachingStatus('idle'); 
+        }, 5000);
+    } catch (e) {
+        console.error("Cache failed", e);
+        setCachingStatus('idle');
+        alert("Erro ao baixar recursos. Verifique sua conexão.");
+    }
+  };
 
   // Dynamic classes based on docked state
   const dockedClasses = docked 
@@ -109,9 +136,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
 
+          {/* Offline Actions */}
+          <div className="space-y-3 border-t border-border pt-6">
+             <div className="px-4 text-xs font-bold text-text-sec uppercase tracking-wider">Offline</div>
+             <button
+              onClick={handleDownloadOffline}
+              disabled={cachingStatus === 'caching' || cachingStatus === 'done'}
+              className={`w-full flex items-center gap-5 px-5 py-4 rounded-2xl transition-all duration-200 group sidebar-text ${
+                  cachingStatus === 'done' 
+                    ? 'bg-green-500/10 text-green-500' 
+                    : 'text-text-sec hover:bg-white/5 hover:text-text'
+              }`}
+            >
+              {cachingStatus === 'caching' ? (
+                  <Loader2 size={26} className="animate-spin text-brand" />
+              ) : cachingStatus === 'done' ? (
+                  <CheckCircle size={26} />
+              ) : (
+                  <DownloadCloud size={26} />
+              )}
+              
+              <div className="flex flex-col items-start">
+                  <span className="text-lg">
+                      {cachingStatus === 'caching' 
+                        ? `Baixando ${cacheProgress}%` 
+                        : cachingStatus === 'done' 
+                           ? `Pronto (${downloadSize || 'OK'})` 
+                           : 'Baixar Recursos'}
+                  </span>
+                  {cachingStatus === 'idle' && <span className="text-xs opacity-60">Disponibilizar App Offline</span>}
+              </div>
+            </button>
+          </div>
+
           {/* Open Files Section */}
           {openFiles.length > 0 && (
-            <div className="animate-in fade-in slide-in-from-left-2">
+            <div className="animate-in fade-in slide-in-from-left-2 border-t border-border pt-6">
               <div className="px-4 mb-3 text-sm font-bold text-text-sec uppercase tracking-wider">
                 Arquivos Abertos
               </div>

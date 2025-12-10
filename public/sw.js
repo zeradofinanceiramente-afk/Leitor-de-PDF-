@@ -2,7 +2,7 @@
 // Import Workbox
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox-sw.js');
 
-const CACHE_NAME = 'pdf-annotator-v11-workbox';
+const CACHE_NAME = 'pdf-annotator-v13-shell';
 const OFFLINE_PAGE = '/index.html';
 
 workbox.setConfig({
@@ -16,39 +16,30 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// Assets to precache (App Shell + Critical CDNs + Local Icons)
+// Assets to precache (Critical Shell Only)
+// Reduced list to avoid single point of failure during install
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  '/icons/icon-512-maskable.png',
-  '/icons/shortcut-files-192.png',
-  '/icons/shortcut-mindmap-192.png',
-  '/icons/filehandler-512.png',
   'https://cdn.tailwindcss.com',
-  'https://aistudiocdn.com/react@^19.2.0',
-  'https://aistudiocdn.com/react-dom@^19.2.0',
-  'https://aistudiocdn.com/firebase@^12.6.0',
-  'https://aistudiocdn.com/lucide-react@^0.555.0',
-  'https://aistudiocdn.com/pdf-lib@^1.17.1',
-  'https://aistudiocdn.com/idb@^8.0.3',
-  'https://aistudiocdn.com/vite@^7.2.6',
-  'https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1',
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/+esm',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/web/pdf_viewer.css',
-  'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs',
-  'https://esm.sh/@google/genai',
-  'https://esm.sh/react-window@1.8.10?external=react,react-dom',
-  'https://esm.sh/react-virtualized-auto-sizer@1.0.24?external=react,react-dom',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => {
+          // Attempt to cache all, but log errors instead of failing hard if possible
+          // Note: cache.addAll is atomic, so we stick to critical assets that MUST exist.
+          return cache.addAll(APP_SHELL).catch(err => {
+              console.warn("SW Install: Failed to cache some shell assets", err);
+              // We do NOT re-throw, so the SW can still install. 
+              // The manual offline download feature in the app can fill the gaps.
+          });
+      })
   );
 });
 
@@ -81,7 +72,9 @@ workbox.routing.registerRoute(
     request.destination === 'style' ||
     url.hostname.includes('cdn') || 
     url.hostname.includes('esm.sh') ||
-    url.hostname.includes('aistudiocdn.com'),
+    url.hostname.includes('aistudiocdn.com') ||
+    url.hostname.includes('fonts.googleapis.com') ||
+    url.hostname.includes('fonts.gstatic.com'),
   new workbox.strategies.StaleWhileRevalidate({
     cacheName: 'assets-cache',
     plugins: [
@@ -118,7 +111,6 @@ workbox.routing.registerRoute(
   new workbox.strategies.NetworkOnly()
 );
 
-// Background Sync stub (for future use)
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-annotations') {
     console.log('[SW] Background sync triggered');
