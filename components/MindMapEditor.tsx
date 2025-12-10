@@ -1,8 +1,7 @@
-
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff } from 'lucide-react';
+import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff, Sparkles, Upload } from 'lucide-react';
 import { updateDriveFile, downloadDriveFile } from '../services/driveService';
+import { GoogleGenAI } from "@google/genai";
 
 // --- Types ---
 interface Node {
@@ -57,6 +56,68 @@ const COLORS = [
   '#ec4899', // Pink
 ];
 
+const AI_PROMPT_TEMPLATE = `
+Você vai receber um arquivo .txt gerado pelo meu Leitor de PDF.
+O arquivo segue sempre este padrão:
+
+Página X
+Citação
+
+Página X
+Citação
+
+… (repete)
+
+Essas citações representam trechos que destaquei durante a leitura.
+Use isso como prioridade, mas equilibre com pesquisa externa confiável sobre a obra, autor, contexto historiográfico e correntes teóricas — sempre sem inventar nada.
+
+Sua tarefa é:
+
+1. Interpretar o texto e meus destaques (eles indicam o que considero importante).
+2. Pesquisar conceitos, contexto da obra, teoria do autor e relevância historiográfica.
+3. Criar um mapa mental estruturado, sempre no formato:
+
+[TÍTULO PRINCIPAL]
+
+- Ideia central
+  - Subidéia
+  - Subidéia
+
+- Conceitos chave
+  - Conceito A
+  - Conceito B
+
+- Contexto histórico
+  - Evento / período
+  - Consequências
+
+- Autor e teoria
+  - Linha historiográfica
+  - Método / abordagem
+
+- Relações com outros temas
+  - Comparações
+  - Implicações
+
+- Aplicações práticas
+  - Por que isso importa
+  - Como usar no meu estudo
+
+4. O mapa deve ser objetivo, denso e sem enrolação.
+5. Trate a informação como um fichamento avançado, não como resumo infantil.
+6. Nunca altere o formato, porque meu frontend depende disso.
+7. Priorize concisão, como se estivesse preparando material para estudo rápido.
+8. Nunca repita as citações; use-as apenas como base interpretativa.
+
+Perfil do usuário (use para ajustar o estilo sem mencionar explicitamente):
+Estudante de História com foco em análise teórica e discursos historiográficos.
+Gosta de sínteses inteligentes, diretas e sem firula.
+Prefere mapas mentais que mostrem lógica, hierarquia e conexões entre temas.
+O objetivo é acelerar leitura, retenção e produção acadêmica.
+
+Saída final: somente o mapa mental estruturado (texto puro), sem comentários adicionais ou markdown block code. Use identação com 2 espaços ou hífen.
+`;
+
 export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessToken, onToggleMenu, onAuthError }) => {
   // Determine if it's a local file
   const isLocalFile = fileId.startsWith('local-') || !accessToken;
@@ -88,9 +149,13 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // AI State
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
+  const aiFileInputRef = useRef<HTMLInputElement>(null);
   
   // Debounce Ref for Auto-Save
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -191,6 +256,244 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // --- AI GENERATION LOGIC ---
+  const handleAiFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsGeneratingAi(true);
+    try {
+        const fileText = await file.text();
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `${AI_PROMPT_TEMPLATE}\n\n--- INÍCIO DO ARQUIVO TXT ---\n${fileText}\n--- FIM DO ARQUIVO TXT ---`
+        });
+
+        const generatedText = response.text;
+        if (generatedText) {
+            parseAndApplyAiMap(generatedText);
+        } else {
+            alert("O Gemini não retornou nenhum conteúdo. Tente novamente.");
+        }
+
+    } catch (err: any) {
+        console.error("Erro na geração IA:", err);
+        alert("Erro ao gerar mapa: " + (err.message || "Erro desconhecido"));
+    } finally {
+        setIsGeneratingAi(false);
+        // Clear input
+        if (aiFileInputRef.current) aiFileInputRef.current.value = '';
+    }
+  };
+
+  const parseAndApplyAiMap = (text: string) => {
+      // 1. Parsing logic to tree structure
+      const lines = text.split('\n').filter(l => l.trim().length > 0);
+      const rootId = `root-${Date.now()}`;
+      
+      let newNodes: Node[] = [];
+      let newEdges: Edge[] = [];
+      
+      // Stack stores: { level, id }
+      const stack: { level: number, id: string }[] = [];
+      
+      let rootNode: Node | null = null;
+      let firstLineProcessed = false;
+
+      lines.forEach((line) => {
+          const trimmed = line.trim();
+          
+          // Check for Title (Root) -> Usually formatted as [TITLE] or just the first line if not bullet
+          if (!firstLineProcessed && (trimmed.startsWith('[') || !trimmed.startsWith('-'))) {
+             const cleanText = trimmed.replace(/^\[|\]$/g, '');
+             rootNode = {
+                 id: rootId,
+                 text: cleanText,
+                 x: 0,
+                 y: 0,
+                 width: 160,
+                 height: 60,
+                 color: '#a855f7',
+                 isRoot: true,
+                 scale: 1.3
+             };
+             newNodes.push(rootNode);
+             stack.push({ level: 0, id: rootId });
+             firstLineProcessed = true;
+             return;
+          }
+
+          // List Items
+          const indentMatch = line.match(/^(\s*)/);
+          const rawIndent = indentMatch ? indentMatch[1].length : 0;
+          // Estimate level: 2 spaces = 1 level, or just by bullet hierarchy
+          // Standardize: remove bullet
+          const content = trimmed.replace(/^[-*]\s*/, '');
+          
+          if (!content) return;
+
+          // Determine parent based on stack
+          // Simple logic: If current indent > last indent, child. If <=, pop until finding parent.
+          // Since indenting can vary (2 spaces, 4 spaces, tab), we approximate.
+          // Let's assume standard 2-space or tab indentation mapping to levels.
+          // Or strictly follow the stack: 
+          //   - If new node is Level X, parent must be Level X-1.
+          
+          // We can't strictly trust spaces from LLMs. 
+          // Heuristic: 
+          // Level 1: Starts with "- " or "* " with 0 indent relative to line start.
+          // Level 2: Starts with space + "- ".
+          
+          let level = 1;
+          if (line.startsWith('    ') || line.startsWith('\t\t')) level = 2;
+          else if (line.startsWith('  ') || line.startsWith('\t')) level = 2; // Be flexible
+          else level = 1;
+
+          // Special case: Root is level 0. 
+          // If we have text but no root yet (shouldn't happen with correct prompt), make it root.
+          if (!rootNode) {
+             // ... same root logic as above
+          }
+
+          // Adjust stack
+          // We want to find a parent with level < current level
+          while (stack.length > 0 && stack[stack.length - 1].level >= level) {
+              stack.pop();
+          }
+
+          if (stack.length === 0) {
+              // Fallback: attach to root if stack empty
+              stack.push({ level: 0, id: rootId });
+          }
+
+          const parent = stack[stack.length - 1];
+          const nodeId = `node-${Date.now()}-${Math.random().toString(36).substr(2,5)}`;
+          
+          // Color based on branch (Level 1 decides color)
+          let color = '#52525b'; // default zinc
+          if (level === 1) {
+              color = COLORS[newNodes.length % COLORS.length];
+          } else {
+              // Inherit parent color logic would require finding parent obj, let's keep it simple or lookup
+              const parentNode = newNodes.find(n => n.id === parent.id);
+              if (parentNode) color = parentNode.color;
+          }
+
+          newNodes.push({
+              id: nodeId,
+              text: content,
+              x: 0, // Will layout later
+              y: 0,
+              width: Math.min(200, Math.max(100, content.length * 8)),
+              height: 50,
+              color: color,
+              parentId: parent.id,
+              scale: level === 1 ? 1.1 : 1.0
+          });
+
+          newEdges.push({
+              id: `edge-${nodeId}`,
+              from: parent.id,
+              to: nodeId
+          });
+
+          stack.push({ level, id: nodeId });
+      });
+
+      // 2. Auto Layout (Radial Tree)
+      // We need to position nodes so they don't overlap.
+      // Root at 0,0.
+      
+      const layoutNodes = (nodes: Node[], edges: Edge[]) => {
+          const root = nodes.find(n => n.isRoot);
+          if (!root) return nodes;
+
+          // Map children
+          const hierarchy: Record<string, string[]> = {};
+          nodes.forEach(n => {
+             if (n.parentId) {
+                 if (!hierarchy[n.parentId]) hierarchy[n.parentId] = [];
+                 hierarchy[n.parentId].push(n.id);
+             }
+          });
+
+          // BFS / layer assignment to count needs
+          root.x = window.innerWidth / 2;
+          root.y = window.innerHeight / 2;
+
+          // Level 1 placement (Circle around root)
+          const level1Ids = hierarchy[root.id] || [];
+          const l1Count = level1Ids.length;
+          const l1Radius = 250;
+          
+          level1Ids.forEach((id, idx) => {
+              const node = nodes.find(n => n.id === id);
+              if (!node) return;
+              
+              const angle = (idx / l1Count) * 2 * Math.PI;
+              node.x = root.x + Math.cos(angle) * l1Radius;
+              node.y = root.y + Math.sin(angle) * l1Radius;
+
+              // Level 2 placement (Fan out from L1 node)
+              // Vector from Root -> L1
+              const vecX = Math.cos(angle);
+              const vecY = Math.sin(angle);
+              
+              const l2Ids = hierarchy[id] || [];
+              const l2Count = l2Ids.length;
+              const l2Radius = 200;
+              const spreadAngle = Math.PI / 2; // 90 degrees spread
+              
+              l2Ids.forEach((childId, cIdx) => {
+                  const child = nodes.find(n => n.id === childId);
+                  if (!child) return;
+
+                  // Distribute within arc centered on parent's angle
+                  // Start angle = angle - spread/2
+                  const subAngleStart = angle - (spreadAngle / 2);
+                  // Step
+                  const step = l2Count > 1 ? spreadAngle / (l2Count - 1) : 0;
+                  const finalAngle = l2Count > 1 
+                      ? subAngleStart + (cIdx * step) 
+                      : angle;
+
+                  child.x = node.x + Math.cos(finalAngle) * l2Radius;
+                  child.y = node.y + Math.sin(finalAngle) * l2Radius;
+                  
+                  // Level 3... linear stacking for simplicity if deeply nested
+                  const l3Ids = hierarchy[childId] || [];
+                  l3Ids.forEach((grandChildId, gIdx) => {
+                       const gChild = nodes.find(n => n.id === grandChildId);
+                       if (gChild) {
+                           gChild.x = child.x + (gIdx % 2 === 0 ? 20 : -20); // slight stagger
+                           gChild.y = child.y + 80 + (gIdx * 60);
+                       }
+                  });
+              });
+          });
+
+          return nodes;
+      };
+
+      const layoutedNodes = layoutNodes(newNodes, newEdges);
+      
+      setNodes(layoutedNodes);
+      setEdges(newEdges);
+      
+      // Center view on root
+      if (layoutedNodes.length > 0 && layoutedNodes[0].isRoot) {
+          const r = layoutedNodes[0];
+          setViewport({
+              x: window.innerWidth / 2 - r.x - (r.width/2), // Basic centering adjustment
+              y: window.innerHeight / 2 - r.y - (r.height/2),
+              zoom: 0.8
+          });
+      }
+  };
+
 
   const saveToDrive = async () => {
       if (!accessToken || !fileId || isLocalFile) return;
@@ -584,6 +887,17 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
   return (
     <div className="w-full h-full bg-[#18181b] relative overflow-hidden flex flex-col font-sans select-none">
       
+      {/* AI Loading Overlay */}
+      {isGeneratingAi && (
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-in fade-in">
+           <div className="bg-surface border border-brand/30 rounded-3xl p-8 flex flex-col items-center shadow-2xl max-w-sm text-center">
+              <Sparkles size={48} className="animate-pulse text-brand mb-4" />
+              <h3 className="text-xl font-bold text-text mb-2">Gemini está trabalhando...</h3>
+              <p className="text-text-sec text-sm">Lendo suas citações e estruturando o conhecimento.</p>
+           </div>
+        </div>
+      )}
+
       {/* Header / Menu Toggle */}
       <div className="absolute top-4 left-4 z-20 flex gap-2 items-center">
         <button onClick={onToggleMenu} className="p-3 bg-surface/80 backdrop-blur rounded-full text-text-sec hover:text-text border border-border shadow-lg">
@@ -600,6 +914,20 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
       </div>
 
       <div className="absolute top-4 right-4 z-20 flex gap-2">
+         {/* AI BUTTON */}
+         <label className="cursor-pointer flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-bold shadow-lg transition-all bg-purple-600/20 border-purple-500/50 text-purple-300 hover:bg-purple-600/30 hover:brightness-110">
+             <Sparkles size={16} />
+             <span className="hidden sm:inline">IA via .txt</span>
+             <input 
+                type="file" 
+                accept=".txt" 
+                ref={aiFileInputRef}
+                className="hidden" 
+                onChange={handleAiFileSelect}
+                disabled={isGeneratingAi}
+             />
+         </label>
+
          {/* SAVE STATUS INDICATOR */}
          {isLocalFile ? (
             <button 
