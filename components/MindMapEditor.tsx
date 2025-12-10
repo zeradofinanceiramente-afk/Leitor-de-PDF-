@@ -1,7 +1,5 @@
-
-
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff, Undo, Redo } from 'lucide-react';
 import { updateDriveFile, downloadDriveFile } from '../services/driveService';
 
 // --- Types ---
@@ -36,6 +34,11 @@ interface MindMapData {
   viewport: Viewport;
 }
 
+interface HistoryState {
+  nodes: Node[];
+  edges: Edge[];
+}
+
 interface Props {
   fileId: string;
   fileName: string;
@@ -66,6 +69,10 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
   const [edges, setEdges] = useState<Edge[]>([]);
   const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
   
+  // Undo/Redo State
+  const [historyPast, setHistoryPast] = useState<HistoryState[]>([]);
+  const [historyFuture, setHistoryFuture] = useState<HistoryState[]>([]);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   
@@ -73,6 +80,7 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse position for panning
   const [dragNodeId, setDragNodeId] = useState<string | null>(null);
+  const dragSnapshotRef = useRef<HistoryState | null>(null); // To save state before drag
   
   // Multi-touch / Pinch State
   const pointersRef = useRef<Map<number, { x: number, y: number }>>(new Map());
@@ -97,6 +105,89 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
   // Helper to get selected node
   const selectedNode = nodes.find(n => n.id === selectedNodeId);
+
+  // Online status
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // --- 0. Undo/Redo Logic ---
+  
+  const recordHistory = useCallback(() => {
+    setHistoryPast(prev => {
+      const newPast = [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }];
+      // Limit history to 50 steps
+      if (newPast.length > 50) return newPast.slice(newPast.length - 50);
+      return newPast;
+    });
+    setHistoryFuture([]); // Clear redo stack on new action
+  }, [nodes, edges]);
+
+  const undo = useCallback(() => {
+    if (historyPast.length === 0) return;
+
+    const previousState = historyPast[historyPast.length - 1];
+    const newPast = historyPast.slice(0, -1);
+
+    setHistoryFuture(prev => [{ nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }, ...prev]);
+    setHistoryPast(newPast);
+
+    setNodes(previousState.nodes);
+    setEdges(previousState.edges);
+    // Don't change viewport on undo/redo to keep user orientation
+  }, [historyPast, nodes, edges]);
+
+  const redo = useCallback(() => {
+    if (historyFuture.length === 0) return;
+
+    const nextState = historyFuture[0];
+    const newFuture = historyFuture.slice(1);
+
+    setHistoryPast(prev => [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }]);
+    setHistoryFuture(newFuture);
+
+    setNodes(nextState.nodes);
+    setEdges(nextState.edges);
+  }, [historyFuture, nodes, edges]);
+
+  // Keyboard Shortcuts for Undo/Redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if editing text
+      if (editingNodeId) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        redo();
+      } else if (e.key === 'Escape') {
+        setLinkingSourceId(null);
+        setSelectedNodeId(null);
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeId && !editingNodeId) {
+             deleteNode();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo, selectedNodeId, editingNodeId, nodes]); // dependencies for deleteNode which is called inside
 
   // --- 1. Load Data from Drive Blob ---
   useEffect(() => {
@@ -124,6 +215,9 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                     setNodes(data.nodes || []);
                     setEdges(data.edges || []);
                     setViewport(data.viewport || { x: 0, y: 0, zoom: 1 });
+                    // Clear history on load
+                    setHistoryPast([]);
+                    setHistoryFuture([]);
                 }
             } catch (e) {
                 console.error("Invalid JSON content", e);
@@ -168,8 +262,8 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
     setHasUnsavedChanges(true);
     setSaveError(null);
 
-    // Only auto-save if it's a Drive file
-    if (!isLocalFile) {
+    // Only auto-save if it's a Drive file and online
+    if (!isLocalFile && isOnline) {
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {
             saveToDrive();
@@ -179,18 +273,7 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
     return () => {
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [nodes, edges, viewport, isLocalFile]);
-
-  // Cancel linking on Escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-            setLinkingSourceId(null);
-        }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [nodes, edges, viewport, isLocalFile, isOnline]);
 
   const saveToDrive = async () => {
       if (!accessToken || !fileId || isLocalFile) return;
@@ -396,7 +479,27 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
     if (pointersRef.current.size === 0) {
         setIsDragging(false);
-        setDragNodeId(null);
+        
+        // --- End Node Drag (Record History) ---
+        if (dragNodeId) {
+            if (dragSnapshotRef.current) {
+                // Check if node actually moved
+                const oldNode = dragSnapshotRef.current.nodes.find(n => n.id === dragNodeId);
+                const newNode = nodes.find(n => n.id === dragNodeId);
+                
+                if (oldNode && newNode && (oldNode.x !== newNode.x || oldNode.y !== newNode.y)) {
+                    // It moved, so push the SNAPSHOT (state BEFORE drag) to history
+                    setHistoryPast(prev => {
+                         const newPast = [...prev, dragSnapshotRef.current!];
+                         if (newPast.length > 50) return newPast.slice(newPast.length - 50);
+                         return newPast;
+                    });
+                    setHistoryFuture([]);
+                }
+            }
+            setDragNodeId(null);
+            dragSnapshotRef.current = null;
+        }
     }
   };
 
@@ -418,6 +521,7 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
       );
 
       if (!exists) {
+          recordHistory(); // Save before adding edge
           const newEdge: Edge = {
               id: `edge-${Date.now()}`,
               from: linkingSourceId,
@@ -444,6 +548,9 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
     setSelectedNodeId(id);
     setDragNodeId(id);
+    
+    // Capture state before drag
+    dragSnapshotRef.current = { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) };
   };
 
   const handleNodeDoubleClick = (e: React.MouseEvent, node: Node) => {
@@ -459,7 +566,11 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
   const saveEdit = () => {
     if (editingNodeId) {
-      setNodes(prev => prev.map(n => n.id === editingNodeId ? { ...n, text: editText } : n));
+      const node = nodes.find(n => n.id === editingNodeId);
+      if (node && node.text !== editText) {
+         recordHistory(); // Save before committing text change
+         setNodes(prev => prev.map(n => n.id === editingNodeId ? { ...n, text: editText } : n));
+      }
       setEditingNodeId(null);
     }
   };
@@ -469,18 +580,32 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
   };
 
   const setNodeScale = (id: string, newScale: number) => {
-    setNodes(prev => prev.map(n => {
-      if (n.id === id) {
-        return { ...n, scale: newScale };
-      }
-      return n;
-    }));
+    const node = nodes.find(n => n.id === id);
+    if (node && node.scale !== newScale) {
+        recordHistory();
+        setNodes(prev => prev.map(n => {
+          if (n.id === id) {
+            return { ...n, scale: newScale };
+          }
+          return n;
+        }));
+    }
   };
+  
+  const setNodeColor = (id: string, newColor: string) => {
+    const node = nodes.find(n => n.id === id);
+    if (node && node.color !== newColor) {
+        recordHistory();
+        setNodes(prev => prev.map(n => n.id === id ? { ...n, color: newColor } : n));
+    }
+  }
 
   const addChildNode = () => {
     if (!selectedNodeId) return;
     const parent = nodes.find(n => n.id === selectedNodeId);
     if (!parent) return;
+
+    recordHistory(); // Save before adding
 
     const newId = `node-${Date.now()}`;
     const color = parent.isRoot 
@@ -524,6 +649,8 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
       alert("Não é possível apagar o tópico central.");
       return;
     }
+
+    recordHistory(); // Save before deleting
 
     const toDeleteIds = new Set<string>();
     const stack = [selectedNodeId];
@@ -592,16 +719,16 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
         <span className="bg-surface/80 backdrop-blur px-4 py-2 rounded-full border border-border text-text font-medium shadow-lg truncate max-w-[200px]">
             {fileName.replace('.mindmap', '')}
         </span>
-        {isLocalFile && (
+        {(isLocalFile || !isOnline) && (
            <span className="bg-surface/80 backdrop-blur px-3 py-1.5 rounded-full border border-border text-xs text-text-sec flex items-center gap-1">
-             <WifiOff size={14} /> Local
+             <WifiOff size={14} /> {isLocalFile ? "Local" : "Offline"}
            </span>
         )}
       </div>
 
       <div className="absolute top-4 right-4 z-20 flex gap-2">
          {/* SAVE STATUS INDICATOR */}
-         {isLocalFile ? (
+         {isLocalFile || !isOnline ? (
             <button 
               onClick={saveToLocal}
               className={`flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-bold shadow-lg transition-all bg-brand text-bg border-transparent hover:brightness-110`}
@@ -754,6 +881,28 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
       {/* Bottom Toolbar */}
       <div className="mm-toolbar absolute bottom-8 left-1/2 -translate-x-1/2 bg-surface/90 backdrop-blur-md border border-border p-2 rounded-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-6 z-50">
+         {/* Undo/Redo Buttons */}
+         <div className="flex items-center gap-1">
+             <button 
+                onClick={undo} 
+                disabled={historyPast.length === 0}
+                className={`p-3 rounded-xl transition-colors ${historyPast.length > 0 ? 'hover:bg-white/10 text-text-sec hover:text-text' : 'text-zinc-600 cursor-not-allowed'}`}
+                title="Desfazer (Ctrl+Z)"
+             >
+                <Undo size={20} />
+             </button>
+             <button 
+                onClick={redo} 
+                disabled={historyFuture.length === 0}
+                className={`p-3 rounded-xl transition-colors ${historyFuture.length > 0 ? 'hover:bg-white/10 text-text-sec hover:text-text' : 'text-zinc-600 cursor-not-allowed'}`}
+                title="Refazer (Ctrl+Y)"
+             >
+                <Redo size={20} />
+             </button>
+         </div>
+
+         <div className="w-px h-8 bg-border"></div>
+
          {selectedNode && !linkingSourceId ? (
             <>
                <div className="flex items-center gap-1">
@@ -766,7 +915,7 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                  {COLORS.slice(0, 5).map(c => (
                     <button 
                       key={c}
-                      onClick={() => setNodes(prev => prev.map(n => n.id === selectedNode.id ? { ...n, color: c } : n))}
+                      onClick={() => setNodeColor(selectedNode.id, c)}
                       className={`w-6 h-6 rounded-full border hover:scale-110 transition-transform ${selectedNode.color === c ? 'border-white' : 'border-white/20'}`}
                       style={{ backgroundColor: c }}
                     />

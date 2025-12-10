@@ -39,3 +39,14 @@ export interface ThemeColors {
   surface: string;
   text: string;
 }
+
+export interface SyncQueueItem {
+  id: string;
+  fileId: string;
+  action: 'create' | 'update';
+  blob: Blob;
+  name: string;
+  parents?: string[];
+  mimeType: string;
+  createdAt: number;
+}

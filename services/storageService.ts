@@ -1,8 +1,8 @@
 import { openDB } from "idb";
-import { Annotation, DriveFile } from "../types";
+import { Annotation, DriveFile, SyncQueueItem } from "../types";
 
 // --- IndexedDB Setup ---
-const dbPromise = openDB("pwa-drive-annotator", 4, {
+const dbPromise = openDB("pwa-drive-annotator", 5, {
   upgrade(db, oldVersion, newVersion, transaction) {
     // Store para anotações locais
     if (!db.objectStoreNames.contains("annotations")) {
@@ -21,9 +21,20 @@ const dbPromise = openDB("pwa-drive-annotator", 4, {
       store.createIndex("lastOpened", "lastOpened");
     }
 
-    // NEW: Store para Mapas Mentais
+    // Store para Mapas Mentais
     if (!db.objectStoreNames.contains("mindmaps")) {
       db.createObjectStore("mindmaps", { keyPath: "id" });
+    }
+
+    // NEW: Store para Arquivos Offline (Cache Completo)
+    if (!db.objectStoreNames.contains("offlineFiles")) {
+      db.createObjectStore("offlineFiles", { keyPath: "id" });
+    }
+
+    // NEW: Store para Fila de Sincronização (Uploads Pendentes)
+    if (!db.objectStoreNames.contains("syncQueue")) {
+      const store = db.createObjectStore("syncQueue", { keyPath: "id" });
+      store.createIndex("createdAt", "createdAt");
     }
   }
 });
@@ -105,4 +116,52 @@ export async function deleteMindMap(id: string) {
 
 export async function syncPendingAnnotations() {
   return;
+}
+
+// --- Offline Files Logic ---
+
+export async function saveOfflineFile(fileId: string, blob: Blob) {
+  const idb = await dbPromise;
+  await idb.put("offlineFiles", { id: fileId, blob, storedAt: Date.now() });
+}
+
+export async function getOfflineFile(fileId: string): Promise<Blob | undefined> {
+  const idb = await dbPromise;
+  const record = await idb.get("offlineFiles", fileId);
+  return record?.blob;
+}
+
+export async function deleteOfflineFile(fileId: string) {
+  const idb = await dbPromise;
+  await idb.delete("offlineFiles", fileId);
+}
+
+export async function isFileOffline(fileId: string): Promise<boolean> {
+  const idb = await dbPromise;
+  const record = await idb.get("offlineFiles", fileId);
+  return !!record;
+}
+
+// --- Sync Queue Logic ---
+
+export async function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'createdAt'>) {
+  const idb = await dbPromise;
+  const newItem: SyncQueueItem = {
+    ...item,
+    id: `sync-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    createdAt: Date.now()
+  };
+  await idb.put("syncQueue", newItem);
+  return newItem;
+}
+
+export async function getSyncQueue(): Promise<SyncQueueItem[]> {
+  const idb = await dbPromise;
+  const items = await idb.getAllFromIndex("syncQueue", "createdAt");
+  return items;
+}
+
+export async function removeSyncQueueItem(id: string) {
+  const idb = await dbPromise;
+  await idb.delete("syncQueue", id);
 }

@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { signInWithGoogleDrive, logout } from './services/authService';
-import { addRecentFile } from './services/storageService';
-import { uploadFileToDrive } from './services/driveService';
+import { addRecentFile, getSyncQueue, removeSyncQueueItem } from './services/storageService';
+import { uploadFileToDrive, updateDriveFile } from './services/driveService';
 import { DriveBrowser } from './components/DriveBrowser';
 import { PdfViewer } from './components/PdfViewer';
 import { Sidebar } from './components/Sidebar';
@@ -11,7 +11,7 @@ import { Dashboard } from './components/Dashboard';
 import { MindMapEditor } from './components/MindMapEditor';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { DriveFile } from './types';
-import { ShieldCheck, LogIn, RefreshCw, AlertCircle, XCircle, Copy, Menu, Lock, Loader2, HardDrive } from 'lucide-react';
+import { ShieldCheck, LogIn, RefreshCw, AlertCircle, XCircle, Copy, Menu, Lock, Loader2, HardDrive, Wifi } from 'lucide-react';
 
 // Helpers para Local Storage (Token do Drive)
 const TOKEN_KEY = 'drive_access_token';
@@ -43,6 +43,9 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth > 768);
   const [isPopup, setIsPopup] = useState(false);
   const [isCreatingMap, setIsCreatingMap] = useState(false); // Spinner for creating map
+  
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const isViewerActive = !['dashboard', 'browser', 'mindmaps'].includes(activeTab);
 
@@ -97,6 +100,54 @@ export default function App() {
     });
     return () => unsubscribe();
   }, [isPopup]);
+
+  // --- SYNC QUEUE PROCESSING ---
+  const processSyncQueue = async () => {
+    if (!accessToken || isSyncing || !navigator.onLine) return;
+    
+    setIsSyncing(true);
+    try {
+        const queue = await getSyncQueue();
+        if (queue.length === 0) return;
+
+        setSyncMessage(`Sincronizando ${queue.length} arquivos pendentes...`);
+        
+        for (const item of queue) {
+            try {
+                if (item.action === 'create') {
+                    await uploadFileToDrive(accessToken, item.blob, item.name, item.parents, item.mimeType);
+                } else if (item.action === 'update') {
+                    await updateDriveFile(accessToken, item.fileId, item.blob, item.mimeType);
+                }
+                await removeSyncQueueItem(item.id);
+            } catch (e: any) {
+                console.error(`Failed to sync item ${item.id}`, e);
+                // Continue to next item even if one fails
+            }
+        }
+        setSyncMessage("Sincronização concluída.");
+        setTimeout(() => setSyncMessage(null), 3000);
+    } catch (e) {
+        console.error("Sync error:", e);
+    } finally {
+        setIsSyncing(false);
+    }
+  };
+
+  // Monitor Online Status for Sync
+  useEffect(() => {
+    const handleOnline = () => {
+        console.log("Network back online. Processing sync queue...");
+        processSyncQueue();
+    };
+    window.addEventListener('online', handleOnline);
+    // Try sync on mount if online
+    if (navigator.onLine && accessToken) {
+        processSyncQueue();
+    }
+    return () => window.removeEventListener('online', handleOnline);
+  }, [accessToken]);
+
 
   const handleLogin = async () => {
     setAuthError(null);
@@ -368,6 +419,14 @@ export default function App() {
         {/* Main Content Area */}
         <main className="flex-1 relative overflow-hidden flex flex-col bg-bg">
           
+          {/* Sync Status Toast */}
+          {syncMessage && (
+             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-brand text-bg px-4 py-2 rounded-full font-bold shadow-lg animate-in slide-in-from-top-2 flex items-center gap-2">
+                 {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <Wifi size={16} />}
+                 {syncMessage}
+             </div>
+          )}
+
           {/* 
               WALL 1: GUEST MODE 
               Show when NO Firebase User is logged in.
