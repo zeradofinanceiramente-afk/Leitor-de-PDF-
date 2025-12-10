@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#09090b"/>
+  <g transform="translate(64, 64) scale(0.75)">
+    <!-- Document Shape -->
+    <path d="M150 100 h180 l82 82 v230 a24 24 0 0 1 -24 24 h-238 a24 24 0 0 1 -24 -24 v-288 a24 24 0 0 1 24 -24" fill="#ffffff" fill-opacity="0.1" stroke="#ffffff" stroke-width="16"/>
+    <!-- Mind Map Network -->
+    <line x1="256" y1="256" x2="256" y2="180" stroke="#a855f7" stroke-width="16" stroke-linecap="round"/>
+    <line x1="256" y1="256" x2="180" y2="330" stroke="#a855f7" stroke-width="16" stroke-linecap="round"/>
+    <line x1="256" y1="256" x2="332" y2="330" stroke="#a855f7" stroke-width="16" stroke-linecap="round"/>
+    
+    <circle cx="256" cy="256" r="40" fill="#a855f7"/>
+    <circle cx="256" cy="180" r="24" fill="#ffffff"/>
+    <circle cx="180" cy="330" r="24" fill="#ffffff"/>
+    <circle cx="332" cy="330" r="24" fill="#ffffff"/>
+  </g>
+</svg>

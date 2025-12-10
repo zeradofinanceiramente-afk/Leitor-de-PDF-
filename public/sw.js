@@ -2,7 +2,7 @@
 // Import Workbox
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox-sw.js');
 
-const CACHE_NAME = 'pdf-annotator-v13-shell';
+const CACHE_NAME = 'pdf-annotator-v14-shell';
 const OFFLINE_PAGE = '/index.html';
 
 workbox.setConfig({
@@ -22,8 +22,8 @@ const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/icons/icon.svg',
+  '/icons/maskable-icon.svg',
   'https://cdn.tailwindcss.com',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/web/pdf_viewer.css',
 ];
