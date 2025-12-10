@@ -1,15 +1,15 @@
 
-
 import React, { useEffect, useState } from 'react';
 import { DriveFile } from '../types';
 import { getRecentFiles } from '../services/storageService';
-import { FileText, Clock, ArrowRight, Upload, Menu, Workflow, WifiOff } from 'lucide-react';
+import { generateMindMapFromText } from '../services/aiService';
+import { FileText, Clock, ArrowRight, Upload, Menu, Workflow, WifiOff, Sparkles, Loader2 } from 'lucide-react';
 
 interface DashboardProps {
   userName?: string | null;
   onOpenFile: (file: DriveFile) => void;
   onUploadLocal: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onCreateMindMap: () => void; // New prop
+  onCreateMindMap: () => void; 
   onChangeView: (view: 'browser') => void;
   onToggleMenu: () => void;
 }
@@ -18,6 +18,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
   const [recents, setRecents] = useState<(DriveFile & { lastOpened: Date })[]>([]);
   const [greeting, setGreeting] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  
+  // AI Generation State
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string | null>(null);
 
   useEffect(() => {
     getRecentFiles().then(setRecents);
@@ -38,9 +42,58 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
     };
   }, []);
 
+  const handleTxtForAiUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files[0]) {
+          const file = e.target.files[0];
+          setIsGenerating(true);
+          setGenerationStatus("Lendo arquivo...");
+          
+          try {
+              const text = await file.text();
+              
+              setGenerationStatus("A IA está estruturando as ideias...");
+              const mindMapData = await generateMindMapFromText(text);
+
+              setGenerationStatus("Finalizando...");
+              
+              const blob = new Blob([JSON.stringify(mindMapData)], { type: 'application/json' });
+              const newFile: DriveFile = {
+                  id: `ai-map-${Date.now()}`,
+                  name: file.name.replace('.txt', '') + ' (Mapa Mental).mindmap',
+                  mimeType: 'application/json',
+                  blob: blob
+              };
+
+              onOpenFile(newFile);
+          } catch (err: any) {
+              alert("Erro ao gerar mapa: " + err.message);
+          } finally {
+              setIsGenerating(false);
+              setGenerationStatus(null);
+              // Reset input
+              e.target.value = ''; 
+          }
+      }
+  };
+
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-bg text-text p-6 md:p-12">
+    <div className="flex-1 h-full overflow-y-auto bg-bg text-text p-6 md:p-12 relative">
       
+      {/* AI Loading Overlay */}
+      {isGenerating && (
+         <div className="absolute inset-0 z-50 bg-black/70 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-in fade-in">
+            <div className="bg-surface border border-border rounded-3xl p-8 flex flex-col items-center shadow-2xl max-w-sm w-full text-center">
+                <div className="relative mb-6">
+                    <div className="absolute inset-0 bg-brand/20 rounded-full blur-xl animate-pulse"></div>
+                    <Sparkles size={48} className="text-brand relative z-10 animate-bounce" />
+                </div>
+                <h3 className="text-xl font-bold text-text mb-2">Criando Mapa Mental</h3>
+                <p className="text-text-sec mb-6">{generationStatus}</p>
+                <Loader2 size={24} className="animate-spin text-brand" />
+            </div>
+         </div>
+      )}
+
       {/* Menu Button (Always Visible now to control sidebar) */}
       <div className="mb-6 md:mb-8 flex justify-between items-center">
         <button onClick={onToggleMenu} className="custom-menu-btn p-3 -ml-3 text-text-sec hover:text-text rounded-full hover:bg-surface transition">
@@ -64,7 +117,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
       </header>
 
       {/* Quick Actions - Larger Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-6 mb-16">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-16">
         <button 
           onClick={() => onChangeView('browser')}
           className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 flex flex-col items-start gap-6 shadow-sm hover:shadow-xl relative overflow-hidden"
@@ -98,6 +151,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
              </p>
           </div>
         </button>
+
+        {/* AI Generator Card */}
+        <label className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 cursor-pointer flex flex-col items-start gap-6 shadow-sm hover:shadow-xl relative overflow-hidden">
+           <div className="w-16 h-16 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+            <Sparkles size={32} />
+          </div>
+          <div>
+             <h3 className="text-2xl font-medium mb-2 text-text">Gerar com IA</h3>
+             <p className="text-base text-text-sec">Criar Mapa a partir de .txt</p>
+          </div>
+          <input 
+              type="file" 
+              accept=".txt" 
+              className="hidden" 
+              onChange={handleTxtForAiUpload}
+              disabled={!isOnline} // AI needs internet
+          />
+          {!isOnline && (
+            <div className="absolute inset-0 bg-surface/80 flex items-center justify-center pointer-events-none">
+               <span className="text-sm font-medium text-text-sec flex items-center gap-2"><WifiOff size={16}/> Requer Internet</span>
+            </div>
+          )}
+        </label>
 
         <label className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 cursor-pointer flex flex-col items-start gap-6 shadow-sm hover:shadow-xl">
            <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">

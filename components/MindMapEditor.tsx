@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff, Undo, Redo } from 'lucide-react';
+import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff, Undo, Redo, ALargeSmall, MousePointer2 } from 'lucide-react';
 import { updateDriveFile, downloadDriveFile } from '../services/driveService';
 
 // --- Types ---
@@ -15,6 +15,7 @@ interface Node {
   parentId?: string;
   isRoot?: boolean;
   scale?: number;
+  fontSize?: number;
 }
 
 interface Edge {
@@ -81,8 +82,13 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse position for panning
   const [dragNodeId, setDragNodeId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 }); // Offset for smooth node dragging
   const dragSnapshotRef = useRef<HistoryState | null>(null); // To save state before drag
   
+  // Resizing State
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStart, setResizeStart] = useState<{ w: number, h: number, mx: number, my: number } | null>(null);
+
   // Multi-touch / Pinch State
   const pointersRef = useRef<Map<number, { x: number, y: number }>>(new Map());
   const prevPinchDistRef = useRef<number | null>(null);
@@ -249,7 +255,8 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
         height: 60,
         color: '#a855f7',
         isRoot: true,
-        scale: 1.2
+        scale: 1.2,
+        fontSize: 18
       }]);
       setEdges([]);
       setViewport({ x: 0, y: 0, zoom: 1 });
@@ -413,15 +420,11 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
     // --- PINCH ZOOM LOGIC (2 Fingers) ---
     if (pointersRef.current.size === 2) {
-        // Convert map values to array and cast to correct type to avoid TS errors
+        // ... (Pinch logic omitted for brevity, same as previous)
         const points: { x: number; y: number }[] = Array.from(pointersRef.current.values());
         const p1 = points[0];
         const p2 = points[1];
-
-        // Calculate distance
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        
-        // Calculate center point between fingers
         const centerX = (p1.x + p2.x) / 2;
         const centerY = (p1.y + p2.y) / 2;
 
@@ -432,12 +435,10 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                 const mouseX = centerX - rect.left;
                 const mouseY = centerY - rect.top;
 
-                // Zoom Math
                 const worldX = (mouseX - viewport.x) / viewport.zoom;
                 const worldY = (mouseY - viewport.y) / viewport.zoom;
 
                 const ratio = dist / prevPinchDistRef.current;
-                // Add sensitivity multiplier to delta
                 const sensitivity = 1.5; 
                 const delta = ratio - 1;
                 const scaleFactor = 1 + (delta * sensitivity);
@@ -447,11 +448,7 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                 const newViewportX = mouseX - worldX * newZoom;
                 const newViewportY = mouseY - worldY * newZoom;
 
-                setViewport({
-                    x: newViewportX,
-                    y: newViewportY,
-                    zoom: newZoom
-                });
+                setViewport({ x: newViewportX, y: newViewportY, zoom: newZoom });
             }
         }
         prevPinchDistRef.current = dist;
@@ -464,11 +461,31 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
       const dy = e.clientY - dragStart.y;
       setViewport(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
       setDragStart({ x: e.clientX, y: e.clientY });
-    } else if (dragNodeId) {
+    } 
+    // --- RESIZING LOGIC ---
+    else if (isResizing && selectedNodeId && resizeStart) {
+       const scaleFactor = viewport.zoom;
+       const dx = (e.clientX - resizeStart.mx) / scaleFactor;
+       const dy = (e.clientY - resizeStart.my) / scaleFactor;
+       
+       setNodes(prev => prev.map(n => {
+           if (n.id === selectedNodeId) {
+               return {
+                   ...n,
+                   width: Math.max(100, resizeStart.w + dx),
+                   height: Math.max(40, resizeStart.h + dy)
+               };
+           }
+           return n;
+       }));
+    }
+    // --- DRAGGING NODE LOGIC (FIXED) ---
+    else if (dragNodeId) {
        const worldPos = screenToWorld(e.clientX, e.clientY);
        setNodes(prev => prev.map(n => {
          if (n.id === dragNodeId) {
-           return { ...n, x: worldPos.x - (n.width / 2), y: worldPos.y - (n.height / 2) };
+           // Use calculate offset so it doesn't jump to center
+           return { ...n, x: worldPos.x - dragOffset.x, y: worldPos.y - dragOffset.y };
          }
          return n;
        }));
@@ -485,6 +502,8 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
 
     if (pointersRef.current.size === 0) {
         setIsDragging(false);
+        setIsResizing(false);
+        setResizeStart(null);
         
         // --- End Node Drag (Record History) ---
         if (dragNodeId) {
@@ -493,8 +512,8 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                 const oldNode = dragSnapshotRef.current.nodes.find(n => n.id === dragNodeId);
                 const newNode = nodes.find(n => n.id === dragNodeId);
                 
-                if (oldNode && newNode && (oldNode.x !== newNode.x || oldNode.y !== newNode.y)) {
-                    // It moved, so push the SNAPSHOT (state BEFORE drag) to history
+                if (oldNode && newNode && (oldNode.x !== newNode.x || oldNode.y !== newNode.y || oldNode.width !== newNode.width || oldNode.height !== newNode.height)) {
+                    // It moved or resized, push SNAPSHOT
                     setHistoryPast(prev => {
                          const newPast = [...prev, dragSnapshotRef.current!];
                          if (newPast.length > 50) return newPast.slice(newPast.length - 50);
@@ -555,8 +574,30 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
     setSelectedNodeId(id);
     setDragNodeId(id);
     
+    // Calculate offset so node doesn't jump to mouse center
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+    const node = nodes.find(n => n.id === id);
+    if (node) {
+        setDragOffset({ x: worldPos.x - node.x, y: worldPos.y - node.y });
+    }
+    
     // Capture state before drag
     dragSnapshotRef.current = { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) };
+  };
+
+  const handleResizeDown = (e: React.PointerEvent, id: string) => {
+     e.stopPropagation();
+     e.preventDefault();
+     const node = nodes.find(n => n.id === id);
+     if (!node) return;
+
+     setIsResizing(true);
+     setSelectedNodeId(id);
+     setDragNodeId(id); // Use drag node ID to track recording history trigger on mouse up
+     setResizeStart({ w: node.width, h: node.height, mx: e.clientX, my: e.clientY });
+     
+     // Capture state before resize
+     dragSnapshotRef.current = { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) };
   };
 
   const handleNodeDoubleClick = (e: React.MouseEvent, node: Node) => {
@@ -598,6 +639,16 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
     }
   };
   
+  const setNodeFontSize = (id: string, delta: number) => {
+    const node = nodes.find(n => n.id === id);
+    if (node) {
+        recordHistory();
+        const currentSize = node.fontSize || 16;
+        const newSize = Math.max(12, Math.min(72, currentSize + delta));
+        setNodes(prev => prev.map(n => n.id === id ? { ...n, fontSize: newSize } : n));
+    }
+  };
+
   const setNodeColor = (id: string, newColor: string) => {
     const node = nodes.find(n => n.id === id);
     if (node && node.color !== newColor) {
@@ -628,11 +679,12 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
       text: 'Novo Tópico',
       x: nx,
       y: ny,
-      width: 120,
-      height: 50,
+      width: 150,
+      height: 60,
       color,
       parentId: parent.id,
-      scale: 1
+      scale: 1,
+      fontSize: 16
     };
 
     const newEdge: Edge = {
@@ -798,7 +850,7 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
       {/* Canvas */}
       <div 
         ref={containerRef}
-        className={`w-full h-full touch-none ${linkingSourceId ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+        className={`w-full h-full touch-none ${linkingSourceId ? 'cursor-crosshair' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -829,8 +881,8 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                 style={{
                   left: node.x,
                   top: node.y,
-                  minWidth: node.width,
-                  minHeight: node.height,
+                  width: node.width,
+                  height: node.height,
                   backgroundColor: '#27272a', // Zinc-800
                   borderColor: node.color,
                   cursor: isDragging ? 'grabbing' : (linkingSourceId ? 'alias' : 'pointer'),
@@ -846,12 +898,29 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                      onChange={(e) => setEditText(e.target.value)}
                      onBlur={saveEdit}
                      onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
-                     className="bg-transparent text-white text-center w-full outline-none font-medium"
+                     className="bg-transparent text-white text-center w-full outline-none font-medium h-full"
+                     style={{ fontSize: (node.fontSize || 16) + 'px' }}
                    />
                  ) : (
-                   <span className={`text-white text-center pointer-events-none ${node.isRoot ? 'text-lg font-bold' : 'text-base font-medium'}`}>
+                   <span 
+                      className={`text-white text-center pointer-events-none ${node.isRoot ? 'font-bold' : 'font-medium'}`}
+                      style={{ 
+                          fontSize: (node.fontSize || 16) + 'px',
+                          lineHeight: '1.2'
+                      }}
+                   >
                      {node.text}
                    </span>
+                 )}
+                 
+                 {/* Resize Handle (Bottom Right) - Only when selected */}
+                 {isSelected && !isEditing && (
+                    <div 
+                        className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize hover:bg-white/20 rounded-tl-xl rounded-br-xl"
+                        onPointerDown={(e) => handleResizeDown(e, node.id)}
+                    >
+                        <div className="absolute bottom-1 right-1 w-2 h-2 bg-white/50 rounded-full" />
+                    </div>
                  )}
 
                  {/* Floating Actions */}
@@ -912,9 +981,12 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
          {selectedNode && !linkingSourceId ? (
             <>
                <div className="flex items-center gap-1">
-                  <button onClick={() => setNodeScale(selectedNode.id, 1.0)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${selectedNode.scale === 1.0 || !selectedNode.scale ? 'bg-brand text-bg' : 'hover:bg-white/10 text-text-sec'}`}>Normal</button>
-                  <button onClick={() => setNodeScale(selectedNode.id, 1.5)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${selectedNode.scale === 1.5 ? 'bg-brand text-bg' : 'hover:bg-white/10 text-text-sec'}`}>Grande</button>
-                  <button onClick={() => setNodeScale(selectedNode.id, 2.5)} className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${selectedNode.scale === 2.5 ? 'bg-brand text-bg' : 'hover:bg-white/10 text-text-sec'}`}>Muito Grande</button>
+                  <div className="flex items-center bg-white/5 rounded-xl px-2">
+                      <ALargeSmall size={16} className="text-text-sec mr-2"/>
+                      <button onClick={() => setNodeFontSize(selectedNode.id, -2)} className="p-3 hover:bg-white/10 rounded-lg text-text transition-colors"><Minus size={16} /></button>
+                      <span className="w-8 text-center text-sm font-mono">{selectedNode.fontSize || 16}</span>
+                      <button onClick={() => setNodeFontSize(selectedNode.id, 2)} className="p-3 hover:bg-white/10 rounded-lg text-text transition-colors"><Plus size={16} /></button>
+                  </div>
                </div>
                <div className="w-px h-8 bg-border"></div>
                <div className="flex items-center gap-1">
