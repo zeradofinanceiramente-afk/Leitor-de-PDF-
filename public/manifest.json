@@ -10,7 +10,7 @@
     "utilities",
     "education"
   ],
-  "start_url": "/index.html",
+  "start_url": "/https://leitor-de-pdf.pages.dev/",
   "display": "standalone",
   "display_override": [
     "window-controls-overlay",
