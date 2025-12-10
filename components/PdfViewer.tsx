@@ -1,5 +1,6 @@
+
 import React, { useRef, useState, useMemo, useCallback, useEffect } from 'react';
-import { Loader2, ArrowLeft, Menu, Save, Copy, Lock, AlertTriangle, X, Download, Share2, CheckCircle, WifiOff, CloudOff } from 'lucide-react';
+import { Loader2, ArrowLeft, Menu, Save, Copy, Lock, AlertTriangle, X, Download, CloudOff } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { FixedSizeList } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
@@ -21,7 +22,7 @@ import { SelectionMenu } from './pdf/SelectionMenu';
 import { burnAnnotationsToPdf } from '../services/pdfModifierService';
 import { updateDriveFile, uploadFileToDrive } from '../services/driveService';
 import { fetchDefinition } from '../services/dictionaryService';
-import { saveOfflineFile, deleteOfflineFile, isFileOffline, addToSyncQueue } from '../services/storageService';
+import { saveOfflineFile, isFileOffline, addToSyncQueue } from '../services/storageService';
 import { Annotation } from '../types';
 
 interface Props {
@@ -65,22 +66,21 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showPermissionModal, setShowPermissionModal] = useState(false);
   
-  // --- Offline & Share State ---
+  // --- Offline State (Only for save queue check, visual removed from header) ---
   const [isOfflineAvailable, setIsOfflineAvailable] = useState(false);
-  const [isCheckingOffline, setIsCheckingOffline] = useState(true);
 
   // --- AI & Dictionary State ---
   const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [showDefinitionModal, setShowDefinitionModal] = useState(false);
   const [definition, setDefinition] = useState<any>(null);
+  
+  // --- Pinch to Zoom State ---
+  const pointersRef = useRef<Map<number, { x: number, y: number }>>(new Map());
+  const prevPinchDistRef = useRef<number | null>(null);
 
-  // Check Offline Availability on Mount
   useEffect(() => {
-    isFileOffline(fileId).then(available => {
-        setIsOfflineAvailable(available);
-        setIsCheckingOffline(false);
-    });
+    isFileOffline(fileId).then(setIsOfflineAvailable);
   }, [fileId]);
 
   // --- Handlers ---
@@ -116,47 +116,6 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
          setShowSaveModal(false);
      } catch (e: any) {
          alert("Erro ao gerar download: " + e.message);
-     }
-  };
-
-  const handleShare = async () => {
-    if (!originalBlob) return;
-    try {
-        const newBlob = await burnAnnotationsToPdf(originalBlob, annotations);
-        const file = new File([newBlob], fileName, { type: 'application/pdf' });
-        
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({
-                files: [file],
-                title: fileName,
-                text: 'Confira este PDF anotado.'
-            });
-        } else {
-            // Fallback: Download
-            handleDownload();
-        }
-    } catch (e: any) {
-        if (e.name !== 'AbortError') {
-           alert("Erro ao compartilhar: " + e.message);
-        }
-    }
-  };
-
-  const handleToggleOffline = async () => {
-     if (!originalBlob) return;
-     try {
-         if (isOfflineAvailable) {
-             await deleteOfflineFile(fileId);
-             setIsOfflineAvailable(false);
-         } else {
-             // Save current state (burned)
-             const newBlob = await burnAnnotationsToPdf(originalBlob, annotations);
-             await saveOfflineFile(fileId, newBlob);
-             setIsOfflineAvailable(true);
-         }
-     } catch (e: any) {
-         console.error("Offline toggle error:", e);
-         alert("Erro ao alterar disponibilidade offline.");
      }
   };
 
@@ -235,14 +194,10 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
   // Fit Width Logic
   const handleFitWidth = () => {
     if (!pageDimensions || !containerRef.current) return;
-    
     const containerWidth = containerRef.current.clientWidth;
     const isMobile = window.innerWidth < 768;
-    const padding = isMobile ? 20 : 60; // Padding lateral seguro
-    
-    // Scale = (Available Width) / Original PDF Page Width
+    const padding = isMobile ? 20 : 60;
     const newScale = (containerWidth - padding) / pageDimensions.width;
-    
     setScale(newScale);
   };
 
@@ -391,6 +346,41 @@ Entrada: "${text}"`;
     return (pageDimensions.height * scale) + 24;
   }, [pageDimensions, scale]);
 
+  // --- Pinch-to-Zoom Logic ---
+  const handlePointerDown = (e: React.PointerEvent) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointersRef.current.size === 2) {
+      prevPinchDistRef.current = null;
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    
+    if (pointersRef.current.size === 2) {
+      const points = Array.from(pointersRef.current.values()) as { x: number, y: number }[];
+      const dist = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+
+      if (prevPinchDistRef.current) {
+        const scaleFactor = dist / prevPinchDistRef.current;
+        // Apply sensitivity multiplier to make it feel more responsive
+        const sensitivity = 1.0; 
+        const delta = scaleFactor - 1;
+        const adjustedFactor = 1 + (delta * sensitivity);
+
+        setScale(prev => Math.min(Math.max(0.1, prev * adjustedFactor), 5));
+      }
+      prevPinchDistRef.current = dist;
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) {
+      prevPinchDistRef.current = null;
+    }
+  };
+
   return (
     <div 
         className="flex flex-col h-screen bg-bg text-text relative"
@@ -407,33 +397,6 @@ Entrada: "${text}"`;
             <div className="flex flex-col"><span className="text-sm font-medium truncate max-w-[150px] md:max-w-[300px]">{fileName}</span><span className="text-xs text-text-sec">{numPages} pág.</span></div>
          </div>
          <div className="flex items-center gap-1 md:gap-2">
-            
-            {/* Offline Status / Toggle */}
-            <button 
-                onClick={handleToggleOffline}
-                className="p-2 rounded-full hover:bg-white/10 transition-colors"
-                title={isOfflineAvailable ? "Disponível Offline (Clique para remover)" : "Tornar disponível offline"}
-            >
-                {isOfflineAvailable ? (
-                    <div className="text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.8)] animate-in zoom-in">
-                        <CheckCircle size={20} />
-                    </div>
-                ) : (
-                    <div className="text-text-sec/50">
-                        <WifiOff size={20} />
-                    </div>
-                )}
-            </button>
-
-            {/* Share Button */}
-            <button 
-                onClick={handleShare} 
-                className="p-2 hover:bg-white/10 rounded-full text-text-sec hover:text-brand transition-colors"
-                title="Compartilhar PDF"
-            >
-                <Share2 size={20}/>
-            </button>
-
             <button onClick={() => setShowSaveModal(true)} className="flex items-center gap-2 bg-brand text-bg px-3 py-1.5 rounded-full text-sm font-bold shadow-lg hover:brightness-110 transition-all ml-1">
                 <Save size={16}/> 
                 <span className="hidden sm:inline">Salvar</span>
@@ -452,7 +415,14 @@ Entrada: "${text}"`;
             onDownloadFichamento={handleDownloadFichamento}
         />
 
-        <div ref={containerRef} className="flex-1 overflow-hidden bg-gray-100/50 relative">
+        <div 
+           ref={containerRef} 
+           className="flex-1 overflow-hidden bg-gray-100/50 relative touch-none"
+           onPointerDown={handlePointerDown}
+           onPointerMove={handlePointerMove}
+           onPointerUp={handlePointerUp}
+           onPointerLeave={handlePointerUp}
+        >
             <PdfToolbar onFitWidth={handleFitWidth} />
 
             {selection && (

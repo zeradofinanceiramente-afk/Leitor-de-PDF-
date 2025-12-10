@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, Minus, Trash2, Type, Menu, Scaling, LayoutTemplate, BoxSelect, Save, Loader2, RefreshCw, Link, XCircle, Download, WifiOff, Undo, Redo } from 'lucide-react';
 import { updateDriveFile, downloadDriveFile } from '../services/driveService';
@@ -435,7 +436,12 @@ export const MindMapEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, acc
                 const worldX = (mouseX - viewport.x) / viewport.zoom;
                 const worldY = (mouseY - viewport.y) / viewport.zoom;
 
-                const scaleFactor = dist / prevPinchDistRef.current;
+                const ratio = dist / prevPinchDistRef.current;
+                // Add sensitivity multiplier to delta
+                const sensitivity = 1.5; 
+                const delta = ratio - 1;
+                const scaleFactor = 1 + (delta * sensitivity);
+
                 const newZoom = Math.min(Math.max(0.1, viewport.zoom * scaleFactor), 5);
 
                 const newViewportX = mouseX - worldX * newZoom;

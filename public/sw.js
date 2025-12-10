@@ -1,10 +1,11 @@
 // Nome do cache
-const CACHE_NAME = 'pdf-annotator-v6';
+const CACHE_NAME = 'pdf-annotator-v7';
 
 // Arquivos para cachear imediatamente (App Shell)
 const urlsToCache = [
   '/',
   '/index.html',
+  '/?utm_source=pwa', // Importante para o launcher do Android
   'https://cdn.tailwindcss.com',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/web/pdf_viewer.css',
   'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs',
@@ -20,8 +21,8 @@ self.addEventListener('install', (event) => {
         console.log('[SW] Caching App Shell');
         return cache.addAll(urlsToCache);
       })
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 // Ativação e limpeza de caches antigos
@@ -37,60 +38,72 @@ self.addEventListener('activate', (event) => {
         })
       );
     })
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
+
+// Helper para validar se devemos cachear a resposta
+function isValidResponse(response) {
+  if (!response || response.status !== 200) return false;
+  // Permite 'basic' (mesmo domínio) e 'cors' (CDNs externos como aistudiocdn, jsdelivr, etc)
+  const type = response.type;
+  return type === 'basic' || type === 'cors';
+}
 
 // Estratégia de Fetch
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // 1. Arquivos críticos de configuração (Network Only)
-  // IMPORTANTE: Nunca cachear assetlinks.json para não quebrar a verificação do TWA (Barra do topo)
+  // 1. Ignorar requisições que não devem ser cacheadas (APIs, Manifest, etc)
   if (url.pathname.endsWith('manifest.json') || 
       url.pathname.includes('.well-known') || 
-      url.pathname.endsWith('assetlinks.json')) {
+      url.pathname.endsWith('assetlinks.json') ||
+      url.protocol === 'chrome-extension:') {
     return; // Network only
   }
 
-  // 2. Ignorar chamadas de API do Google/Firebase
+  // 2. Ignorar chamadas de API do Google/Firebase (Firestore, Drive, Auth)
+  // Nota: Verificamos o hostname para garantir que não estamos bloqueando os scripts da biblioteca (que vêm de aistudiocdn)
   if (url.hostname.includes('googleapis.com') || 
-      url.hostname.includes('firebase') || 
+      (url.hostname.includes('firebase') && !url.hostname.includes('cdn')) || 
       url.hostname.includes('firestore')) {
     return; 
   }
 
-  // 3. Fontes do Google (Cache First, Fallback Network)
-  if (url.hostname.includes('fonts.googleapis.com') || 
-      url.hostname.includes('fonts.gstatic.com')) {
-    event.respondWith(
-      caches.open(CACHE_NAME).then((cache) => {
-        return cache.match(event.request).then((response) => {
-          return response || fetch(event.request).then((networkResponse) => {
-            cache.put(event.request, networkResponse.clone());
-            return networkResponse;
-          });
-        });
-      })
-    );
-    return;
-  }
-
-  // 4. Stale-While-Revalidate para App Shell
+  // 3. Estratégia Stale-While-Revalidate
   event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        const fetchPromise = fetch(event.request).then((networkResponse) => {
-          if(networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+    caches.match(event.request, { ignoreSearch: url.pathname === '/' }) // Ignora query params apenas para a raiz (evita falha em /?utm_source=pwa se não estiver exato no cache)
+      .then((cachedResponse) => {
+        // Se houver cache, retorna imediatamente
+        if (cachedResponse) {
+          // Atualiza o cache em segundo plano (se online)
+          fetch(event.request).then((networkResponse) => {
+            if (isValidResponse(networkResponse)) {
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, networkResponse.clone());
+              });
+            }
+          }).catch(() => {
+            // Falha silenciosa na atualização em background (offline)
+          });
+          
+          return cachedResponse;
+        }
+
+        // Se não houver cache, busca na rede
+        return fetch(event.request).then((networkResponse) => {
+          if (isValidResponse(networkResponse)) {
              const responseToCache = networkResponse.clone();
              caches.open(CACHE_NAME).then((cache) => {
                cache.put(event.request, responseToCache);
              });
           }
           return networkResponse;
-        }).catch(() => {});
-
-        return response || fetchPromise;
+        });
+      })
+      .catch(() => {
+        // Fallback final para offline se tudo falhar (opcional, aqui retornamos nada para deixar o browser lidar ou poderíamos retornar um index.html offline)
+        // Como o cache.match já deve ter pego o index.html, isso raramente ocorre para a navegação principal
       })
   );
 });

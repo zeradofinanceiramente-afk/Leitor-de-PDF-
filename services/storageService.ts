@@ -142,6 +142,12 @@ export async function isFileOffline(fileId: string): Promise<boolean> {
   return !!record;
 }
 
+export async function getOfflineFileIds(): Promise<string[]> {
+  const idb = await dbPromise;
+  const keys = await idb.getAllKeys("offlineFiles");
+  return keys.map(k => String(k));
+}
+
 // --- Sync Queue Logic ---
 
 export async function addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'createdAt'>) {

@@ -1,8 +1,9 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { listDriveContents, searchMindMaps, renameDriveFile, deleteDriveFile, moveDriveFile } from '../services/driveService';
+import { listDriveContents, searchMindMaps, renameDriveFile, deleteDriveFile, moveDriveFile, downloadDriveFile } from '../services/driveService';
+import { getOfflineFileIds, saveOfflineFile, deleteOfflineFile, getOfflineFile } from '../services/storageService';
 import { DriveFile } from '../types';
-import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, Menu, Folder, ChevronRight, Home, HardDrive, Users, Star, MoreVertical, Trash2, Edit2, FolderInput, X, Check, ArrowLeft, Workflow, Plus } from 'lucide-react';
+import { FileText, Loader2, Search, LayoutGrid, List as ListIcon, AlertTriangle, Menu, Folder, ChevronRight, Home, HardDrive, Users, Star, MoreVertical, Trash2, Edit2, FolderInput, X, Check, ArrowLeft, Workflow, Plus, Share2, Wifi, WifiOff, Cloud } from 'lucide-react';
 
 interface Props {
   accessToken: string;
@@ -35,6 +36,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [filteredFiles, setFilteredFiles] = useState<DriveFile[]>([]);
+  const [offlineFiles, setOfflineFiles] = useState<Set<string>>(new Set());
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -43,6 +46,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   // Action States
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [actionFile, setActionFile] = useState<DriveFile | null>(null);
+  const [actionLoading, setActionLoading] = useState(false); // For share/offline operations
   
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -53,32 +57,10 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
 
   const [showMoveModal, setShowMoveModal] = useState(false);
   
-  const refreshFolder = () => {
-    setLoading(true);
-    const fetcher = currentFolder.id === 'mindmaps' 
-        ? searchMindMaps(accessToken) 
-        : listDriveContents(accessToken, currentFolder.id);
-
-    fetcher
-      .then(data => {
-        // Sort logic
-        const sorted = data.sort((a, b) => {
-          // If mindmaps mode, sort by modified time (desc) if available, or name
-          if (currentFolder.id === 'mindmaps') return 0; // Already sorted by query
-
-          const isFolderA = a.mimeType === 'application/vnd.google-apps.folder';
-          const isFolderB = b.mimeType === 'application/vnd.google-apps.folder';
-          
-          if (isFolderA && !isFolderB) return -1;
-          if (!isFolderA && isFolderB) return 1;
-          return a.name.localeCompare(b.name);
-        });
-        setFiles(sorted);
-        setFilteredFiles(sorted);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  };
+  // Refresh offline status
+  useEffect(() => {
+    getOfflineFileIds().then(ids => setOfflineFiles(new Set(ids)));
+  }, [files]);
 
   useEffect(() => {
     let mounted = true;
@@ -154,7 +136,6 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
 
   const handleBreadcrumbClick = (item: BreadcrumbItem, index: number) => {
     if (mode === 'mindmaps' && index === 0 && item.id === 'mindmaps') {
-        // If clicking root of mindmaps, just reset (although breadcrumbs barely used here)
         setCurrentFolder({ id: 'mindmaps', name: 'Meus Mapas Mentais' });
         setBreadcrumbs([]);
         return;
@@ -186,6 +167,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     e.stopPropagation();
     setActiveMenuId(file.id);
     setActionFile(file);
+    setActionLoading(false);
   };
 
   const handleRenameClick = (e: React.MouseEvent) => {
@@ -202,10 +184,9 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     setIsRenaming(true);
     try {
       await renameDriveFile(accessToken, actionFile.id, renameValue);
-      // Update local state
       const updatedFiles = files.map(f => f.id === actionFile.id ? { ...f, name: renameValue } : f);
       setFiles(updatedFiles);
-      setFilteredFiles(updatedFiles); // Assuming search is cleared or re-runs
+      setFilteredFiles(updatedFiles);
       setShowRenameModal(false);
     } catch (e: any) {
       alert("Erro ao renomear: " + e.message);
@@ -227,7 +208,6 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     setIsDeleting(true);
     try {
       await deleteDriveFile(accessToken, actionFile.id);
-      // Update local state
       const updatedFiles = files.filter(f => f.id !== actionFile.id);
       setFiles(updatedFiles);
       setFilteredFiles(updatedFiles);
@@ -247,7 +227,72 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     }
   };
 
-  // Determine current active section for sidebar highlighting
+  const handleShareClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!actionFile) return;
+    setActionLoading(true);
+
+    try {
+        let blob = actionFile.blob;
+        // Try offline cache first
+        if (!blob && offlineFiles.has(actionFile.id)) {
+             blob = await getOfflineFile(actionFile.id);
+        }
+        // Try download
+        if (!blob) {
+             blob = await downloadDriveFile(accessToken, actionFile.id);
+        }
+        
+        if (!blob) throw new Error("Não foi possível obter o arquivo.");
+
+        const shareFile = new File([blob], actionFile.name, { type: actionFile.mimeType });
+        if (navigator.canShare && navigator.canShare({ files: [shareFile] })) {
+            await navigator.share({
+                files: [shareFile],
+                title: actionFile.name
+            });
+        } else {
+             alert("Compartilhamento não suportado neste navegador.");
+        }
+    } catch (e: any) {
+        alert("Erro ao compartilhar: " + e.message);
+    } finally {
+        setActionLoading(false);
+        setActiveMenuId(null);
+    }
+  };
+
+  const handleToggleOfflineClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!actionFile) return;
+    setActionLoading(true);
+
+    try {
+        if (offlineFiles.has(actionFile.id)) {
+            await deleteOfflineFile(actionFile.id);
+            setOfflineFiles(prev => {
+                const next = new Set(prev);
+                next.delete(actionFile.id);
+                return next;
+            });
+        } else {
+            let blob = actionFile.blob;
+            if (!blob) {
+                 blob = await downloadDriveFile(accessToken, actionFile.id);
+            }
+            if (blob) {
+                await saveOfflineFile(actionFile.id, blob);
+                setOfflineFiles(prev => new Set(prev).add(actionFile.id));
+            }
+        }
+    } catch (e: any) {
+        alert("Erro ao alterar disponibilidade offline: " + e.message);
+    } finally {
+        setActionLoading(false);
+        setActiveMenuId(null);
+    }
+  };
+
   const activeSectionId = breadcrumbs.length > 0 ? breadcrumbs[0].id : currentFolder.id;
 
   if (error) {
@@ -324,14 +369,13 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
            onClose={() => setShowMoveModal(false)}
            onSuccess={() => {
               setShowMoveModal(false);
-              // Remove file from current view instantly as it moved
               setFiles(prev => prev.filter(f => f.id !== actionFile.id));
               setFilteredFiles(prev => prev.filter(f => f.id !== actionFile.id));
            }}
          />
       )}
 
-      {/* Drive Sidebar (Desktop) - HIDDEN IF IN MINDMAPS MODE */}
+      {/* Drive Sidebar (Desktop) */}
       {mode !== 'mindmaps' && (
         <div className="hidden md:flex flex-col w-80 bg-surface/30 border-r border-border p-6 gap-3 shrink-0">
           <div className="text-sm font-bold text-text-sec uppercase tracking-wider mb-2 px-4">Organização</div>
@@ -410,7 +454,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
             </div>
           </div>
 
-          {/* Mobile Tabs (Hidden in Mindmaps Mode) */}
+          {/* Mobile Tabs */}
           {mode !== 'mindmaps' && (
             <div className="md:hidden flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none -mx-6 px-6">
                {SECTIONS.map(section => {
@@ -434,7 +478,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
             </div>
           )}
 
-          {/* Breadcrumbs - Only show if traversing folders, or if not in flat mindmap mode */}
+          {/* Breadcrumbs */}
           {mode !== 'mindmaps' && (
             <div className="flex items-center gap-2 overflow-x-auto pb-4 scrollbar-none text-base min-h-[40px]">
                {breadcrumbs.length > 0 && (
@@ -518,7 +562,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                ) : (
                  <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 pb-10" : "flex flex-col gap-4 pb-10"}>
                     
-                    {/* Back Button (Virtual) - Only in default mode */}
+                    {/* Back Button */}
                     {mode !== 'mindmaps' && breadcrumbs.length > 0 && search === '' && (
                         viewMode === 'grid' ? (
                           <button
@@ -556,6 +600,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                       const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
                       const isMindMap = file.name.endsWith('.mindmap');
                       const isMenuOpen = activeMenuId === file.id;
+                      const isOffline = offlineFiles.has(file.id);
 
                       return (
                         <div key={file.id} className="relative group">
@@ -579,6 +624,11 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                                    </div>
                                 )}
                                 
+                                {isOffline && (
+                                    <div className="absolute top-4 left-4 bg-surface/80 backdrop-blur p-1.5 rounded-full shadow-sm border border-border z-10">
+                                        <WifiOff size={16} className="text-text-sec" />
+                                    </div>
+                                )}
                                 {file.starred && (
                                    <div className="absolute top-4 right-4 bg-surface/80 backdrop-blur p-1.5 rounded-full shadow-sm border border-border">
                                      <Star size={16} className="text-yellow-400 fill-yellow-400" />
@@ -610,12 +660,18 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                           ) : (
                             <button
                               onClick={() => handleItemClick(file)}
-                              className="w-full group flex items-center gap-6 p-5 rounded-3xl bg-surface hover:brightness-110 transition-all text-left border border-border hover:border-brand/30"
+                              className="w-full group flex items-center gap-6 p-5 rounded-3xl bg-surface hover:brightness-110 transition-all text-left border border-border hover:border-brand/30 relative overflow-hidden"
                             >
-                              <div className={`h-14 w-14 rounded-2xl flex items-center justify-center shrink-0 ${isFolder ? 'bg-blue-500/10 text-blue-400' : isMindMap ? 'bg-purple-500/10 text-purple-400' : 'bg-brand/10 text-brand'}`}>
+                              <div className={`h-14 w-14 rounded-2xl flex items-center justify-center shrink-0 relative ${isFolder ? 'bg-blue-500/10 text-blue-400' : isMindMap ? 'bg-purple-500/10 text-purple-400' : 'bg-brand/10 text-brand'}`}>
                                 {isFolder ? <Folder size={28} fill="currentColor" className="opacity-50"/> : 
                                  isMindMap ? <Workflow size={28} /> :
                                  <FileText size={28} />}
+                                 
+                                {isOffline && (
+                                    <div className="absolute -top-1 -left-1 bg-surface rounded-full border border-border p-0.5">
+                                        <WifiOff size={12} className="text-text-sec" />
+                                    </div>
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="font-medium truncate text-text text-lg">{file.name}</p>
@@ -636,26 +692,52 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
 
                           {/* Action Dropdown Menu */}
                           {isMenuOpen && (
-                             <div className="absolute z-30 right-4 bottom-10 md:bottom-auto md:top-10 bg-surface border border-border rounded-xl shadow-2xl p-1.5 flex flex-col min-w-[160px] animate-in zoom-in-95 duration-100 origin-top-right">
-                                <button 
-                                  onClick={handleRenameClick} 
-                                  className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
-                                >
-                                   <Edit2 size={16} /> Renomear
-                                </button>
-                                <button 
-                                  onClick={handleMoveClick}
-                                  className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
-                                >
-                                   <FolderInput size={16} /> Mover
-                                </button>
-                                <div className="h-px bg-border my-1"></div>
-                                <button 
-                                  onClick={handleDeleteClick} 
-                                  className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-red-500/10 rounded-lg text-sm text-red-400 hover:text-red-300 text-left transition-colors"
-                                >
-                                   <Trash2 size={16} /> Excluir
-                                </button>
+                             <div className="absolute z-30 right-4 bottom-10 md:bottom-auto md:top-10 bg-surface border border-border rounded-xl shadow-2xl p-1.5 flex flex-col min-w-[200px] animate-in zoom-in-95 duration-100 origin-top-right">
+                                {actionLoading ? (
+                                    <div className="flex items-center justify-center p-4">
+                                        <Loader2 size={20} className="animate-spin text-brand"/>
+                                    </div>
+                                ) : (
+                                    <>
+                                        {!isFolder && (
+                                            <>
+                                                <button 
+                                                    onClick={handleShareClick}
+                                                    className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
+                                                >
+                                                    <Share2 size={16} /> Compartilhar
+                                                </button>
+                                                <button 
+                                                    onClick={handleToggleOfflineClick}
+                                                    className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
+                                                >
+                                                    {isOffline ? <WifiOff size={16} /> : <Wifi size={16} />}
+                                                    {isOffline ? "Remover Offline" : "Disponibilizar Offline"}
+                                                </button>
+                                                <div className="h-px bg-border my-1"></div>
+                                            </>
+                                        )}
+                                        <button 
+                                        onClick={handleRenameClick} 
+                                        className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
+                                        >
+                                        <Edit2 size={16} /> Renomear
+                                        </button>
+                                        <button 
+                                        onClick={handleMoveClick}
+                                        className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
+                                        >
+                                        <FolderInput size={16} /> Mover
+                                        </button>
+                                        <div className="h-px bg-border my-1"></div>
+                                        <button 
+                                        onClick={handleDeleteClick} 
+                                        className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-red-500/10 rounded-lg text-sm text-red-400 hover:text-red-300 text-left transition-colors"
+                                        >
+                                        <Trash2 size={16} /> Excluir
+                                        </button>
+                                    </>
+                                )}
                              </div>
                           )}
                         </div>
