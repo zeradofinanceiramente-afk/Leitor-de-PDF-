@@ -477,7 +477,7 @@ Entrada: "${text}"`;
                   width={width}
                   overscanCount={2}
                   className="pt-14 outline-none"
-                  onScroll={({ scrollOffset, scrollDirection }) => {
+                  onScroll={({ scrollOffset, scrollDirection }: { scrollOffset: number; scrollDirection: "forward" | "backward" }) => {
                      // Update current page based on scroll
                      const newPage = Math.floor(scrollOffset / itemHeight) + 1;
                      if (newPage !== currentPage) setCurrentPage(newPage);

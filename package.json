@@ -17,11 +17,14 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tesseract.js": "^5.1.0",
-    "@google/genai": "latest"
+    "@google/genai": "latest",
+    "react-window": "^1.8.10",
+    "react-virtualized-auto-sizer": "^1.0.24"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
+    "@types/react-window": "^1.8.8",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.18",
     "postcss": "^8.4.35",

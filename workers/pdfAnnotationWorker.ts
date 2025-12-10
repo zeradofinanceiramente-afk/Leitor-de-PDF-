@@ -1,4 +1,4 @@
-import { PDFDocument, rgb } from 'https://aistudiocdn.com/pdf-lib@^1.17.1';
+import { PDFDocument, rgb } from 'pdf-lib';
 
 // Definição de tipos mínimos para o worker
 interface Annotation {
