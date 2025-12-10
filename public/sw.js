@@ -2,7 +2,7 @@
 // Import Workbox
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox-sw.js');
 
-const CACHE_NAME = 'pdf-annotator-v10-workbox';
+const CACHE_NAME = 'pdf-annotator-v11-workbox';
 const OFFLINE_PAGE = '/index.html';
 
 workbox.setConfig({
@@ -16,11 +16,17 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// Assets to precache (App Shell + Critical CDNs)
+// Assets to precache (App Shell + Critical CDNs + Local Icons)
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/icon-512-maskable.png',
+  '/icons/shortcut-files-192.png',
+  '/icons/shortcut-mindmap-192.png',
+  '/icons/filehandler-512.png',
   'https://cdn.tailwindcss.com',
   'https://aistudiocdn.com/react@^19.2.0',
   'https://aistudiocdn.com/react-dom@^19.2.0',
@@ -36,7 +42,6 @@ const APP_SHELL = [
   'https://esm.sh/@google/genai',
   'https://esm.sh/react-window@1.8.10?external=react,react-dom',
   'https://esm.sh/react-virtualized-auto-sizer@1.0.24?external=react,react-dom',
-  'https://cdn-icons-png.flaticon.com/512/337/337946.png',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Arimo:ital,wght@0,400;0,700;1,400;1,700&family=Tinos:ital,wght@0,400;0,700;1,400;1,700&display=swap'
 ];
 
