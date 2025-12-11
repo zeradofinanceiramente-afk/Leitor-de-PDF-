@@ -49,6 +49,9 @@
     <!-- PDF.js Worker style fix for some environments - DOWNGRADED TO 4.8.69 -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/web/pdf_viewer.css">
     
+    <!-- KaTeX CSS for Math Rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+
     <!-- Google Fonts: Inter (UI) & "Bunker Fonts" (PDF Metrics) -->
     <!-- Arimo = Metric Compatible with Arial -->
     <!-- Tinos = Metric Compatible with Times New Roman -->
@@ -63,6 +66,7 @@
     --bg-main: #09090b;
     --bg-surface: #09090b;
     --bg-sidebar: #000000;
+    --bg-paper: #18181b; /* Papel Escuro */
     --text-main: #fafafa;
     --text-sec: #a1a1aa;
     --brand: #ffffff;
@@ -75,6 +79,7 @@
     --bg-main: #0f172a;
     --bg-surface: #1e293b;
     --bg-sidebar: #1e293b;
+    --bg-paper: #334155;
     --text-main: #f1f5f9;
     --text-sec: #94a3b8;
     --brand: #6366f1;
@@ -87,6 +92,7 @@
     --bg-main: #000000;
     --bg-surface: #000000;
     --bg-sidebar: #000000;
+    --bg-paper: #000000;
     --text-main: #ffffff;
     --text-sec: #ffff00;
     --brand: #ffff00; /* Botões amarelos */
@@ -103,6 +109,7 @@
     --bg-main: #1a1a1a;
     --bg-surface: #2c2c2c;
     --bg-sidebar: #212121;
+    --bg-paper: #262626;
     --text-main: #f0f0f0;
     --text-sec: #a0a0a0;
     --brand: #48bb78; /* Verde menta */
@@ -114,6 +121,7 @@
     --bg-main: #0F1014;
     --bg-surface: #181920;
     --bg-sidebar: #131419;
+    --bg-paper: #1A1B23;
     --text-main: #ffffff;
     --text-sec: #4CC9F0;
     --brand: #4CC9F0; /* Ciano Cyber */
@@ -129,6 +137,7 @@
     --bg-main: #f3e5ca; /* Bege Pergaminho */
     --bg-surface: #FFF8E7;
     --bg-sidebar: #5D0E0E; /* Vermelho Profundo */
+    --bg-paper: #FFFCF5; /* Papel Pergaminho Claro */
     --text-main: #3E2723; /* Marrom Café */
     --text-sec: #5D4037;
     --brand: #B71C1C;
@@ -168,6 +177,91 @@
   input, textarea {
     -webkit-user-select: text;
     user-select: text;
+  }
+
+  /* --- Tiptap Editor Styles --- */
+  .ProseMirror {
+    outline: none;
+    font-size: 1.125rem; /* text-lg */
+    line-height: 1.75;
+  }
+  
+  .ProseMirror h1 { font-size: 2.25rem; font-weight: 800; margin-top: 1.5em; margin-bottom: 0.5em; line-height: 1.1; }
+  .ProseMirror h2 { font-size: 1.875rem; font-weight: 700; margin-top: 1.25em; margin-bottom: 0.5em; }
+  .ProseMirror h3 { font-size: 1.5rem; font-weight: 600; margin-top: 1em; margin-bottom: 0.5em; }
+  .ProseMirror ul, .ProseMirror ol { padding-left: 1.5em; margin-bottom: 1em; }
+  .ProseMirror ul { list-style-type: disc; }
+  .ProseMirror ol { list-style-type: decimal; }
+  .ProseMirror blockquote { border-left: 4px solid var(--brand); padding-left: 1em; font-style: italic; opacity: 0.8; margin: 1em 0; }
+  .ProseMirror code { background-color: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; font-size: 0.85em; }
+  .ProseMirror pre { background-color: #000; padding: 1em; border-radius: 8px; color: #fff; font-family: monospace; overflow-x: auto; margin: 1em 0; }
+  .ProseMirror pre code { background: none; padding: 0; }
+  .ProseMirror hr { border-color: var(--border-color); margin: 2em 0; }
+  
+  .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    display: block;
+    margin: 1em 0;
+  }
+  .ProseMirror img.ProseMirror-selectednode {
+    outline: 3px solid var(--brand);
+  }
+
+  /* --- Table Styles --- */
+  .ProseMirror table {
+    border-collapse: collapse;
+    table-layout: fixed;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+  .ProseMirror table td, .ProseMirror table th {
+    min-width: 1em;
+    border: 1px solid var(--border-color);
+    padding: 3px 5px;
+    vertical-align: top;
+    box-sizing: border-box;
+    position: relative;
+  }
+  .ProseMirror table th {
+    font-weight: bold;
+    text-align: left;
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+  .ProseMirror table .selectedCell:after {
+    z-index: 2;
+    position: absolute;
+    content: "";
+    left: 0; right: 0; top: 0; bottom: 0;
+    background: rgba(200, 200, 255, 0.1);
+    pointer-events: none;
+  }
+  .ProseMirror table .column-resize-handle {
+    position: absolute;
+    right: -2px; top: 0; bottom: 0;
+    width: 4px;
+    background-color: var(--brand);
+    pointer-events: none;
+  }
+
+  .ProseMirror p.is-editor-empty:first-child::before {
+    color: var(--text-sec);
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
+  }
+
+  /* --- React Node Views --- */
+  .react-renderer {
+    border: 2px solid transparent;
+    border-radius: 0.5rem;
+    transition: all 0.2s;
+  }
+  .react-renderer.ProseMirror-selectednode {
+    border-color: var(--brand);
   }
 
   /* --- PDF.js Custom Text Layer Overrides --- */
@@ -212,11 +306,43 @@
     color: transparent;
   }
 
-  /* --- PILAR 4: FONTES "BUNKER" (METRICALLY COMPATIBLE) --- */
-  /* Substituímos mapeamentos genéricos por Arimo (substituto do Arial) e Tinos (substituto do Times) */
-  /* Isso garante que a geometria do PDF (ascent/descent/width) bata com a renderização do browser */
+  /* --- PRINT STYLES (Clean PDF Export) --- */
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    .doc-page, .doc-page * {
+      visibility: visible;
+    }
+    .doc-page {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100% !important;
+      margin: 0 !important;
+      box-shadow: none !important;
+      border: none !important;
+      background-color: white !important; /* Force white paper for print */
+      color: black !important; /* Force black text */
+      transform: none !important;
+      padding: 0 !important;
+    }
+    
+    /* Hide UI elements marked as no-print */
+    .no-print {
+      display: none !important;
+    }
 
-  /* TimesNewRoman Family -> Mapped to Tinos */
+    /* Reset ProseMirror styles for print */
+    .ProseMirror {
+      padding: 2cm !important; /* Standard A4 margins */
+    }
+    .ProseMirror p, .ProseMirror h1, .ProseMirror h2, .ProseMirror h3 {
+      color: black !important;
+    }
+  }
+
+  /* --- FONT DEFINITIONS OMITTED FOR BREVITY (Same as before) --- */
   @font-face {
     font-family: 'TimesNewRoman';
     src: local('Tinos'), local('Times New Roman'), local('Times');
@@ -224,85 +350,12 @@
     font-style: normal;
     font-display: swap;
   }
-  @font-face {
-    font-family: 'TimesNewRoman-Bold';
-    src: local('Tinos Bold'), local('Tinos-Bold'), local('Times New Roman Bold'), local('Times New Roman'), local('Times');
-    font-weight: bold;
-    font-style: normal;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'TimesNewRoman-Italic';
-    src: local('Tinos Italic'), local('Tinos-Italic'), local('Times New Roman Italic'), local('Times New Roman'), local('Times');
-    font-weight: normal;
-    font-style: italic;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'TimesNewRoman-BoldItalic';
-    src: local('Tinos Bold Italic'), local('Tinos-BoldItalic'), local('Times New Roman Bold Italic'), local('Times New Roman'), local('Times');
-    font-weight: bold;
-    font-style: italic;
-    font-display: swap;
-  }
-
-  /* TimesNewRomanPSMT variations -> Mapped to Tinos */
-  @font-face {
-    font-family: 'TimesNewRomanPSMT';
-    src: local('Tinos'), local('Times New Roman'), local('Times');
-    font-weight: normal;
-    font-style: normal;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'TimesNewRomanPS-BoldMT';
-    src: local('Tinos Bold'), local('Tinos-Bold'), local('Times New Roman Bold'), local('Times New Roman'), local('Times');
-    font-weight: bold;
-    font-style: normal;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'TimesNewRomanPS-ItalicMT';
-    src: local('Tinos Italic'), local('Tinos-Italic'), local('Times New Roman Italic'), local('Times New Roman'), local('Times');
-    font-weight: normal;
-    font-style: italic;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'TimesNewRomanPS-BoldItalicMT';
-    src: local('Tinos Bold Italic'), local('Tinos-BoldItalic'), local('Times New Roman Bold Italic'), local('Times New Roman'), local('Times');
-    font-weight: bold;
-    font-style: italic;
-    font-display: swap;
-  }
-
-  /* Arial Family -> Mapped to Arimo (NOT Inter, Inter causes drift) */
+  /* ... (Other fonts remain) ... */
   @font-face {
     font-family: 'Arial';
     src: local('Arimo'), local('Arial'), local('Helvetica');
     font-weight: normal;
     font-style: normal;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'Arial-Bold';
-    src: local('Arimo Bold'), local('Arimo-Bold'), local('Arial Bold'), local('Helvetica Bold');
-    font-weight: bold;
-    font-style: normal;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'Arial-Italic';
-    src: local('Arimo Italic'), local('Arimo-Italic'), local('Arial Italic'), local('Helvetica Oblique');
-    font-weight: normal;
-    font-style: italic;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: 'Arial-BoldItalic';
-    src: local('Arimo Bold Italic'), local('Arimo-BoldItalic'), local('Arial Bold Italic'), local('Helvetica Bold Oblique');
-    font-weight: bold;
-    font-style: italic;
     font-display: swap;
   }
 </style>
@@ -322,7 +375,22 @@
     "tesseract.js": "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/+esm",
     "@google/genai": "https://esm.sh/@google/genai",
     "react-window": "https://esm.sh/react-window@1.8.10?external=react,react-dom",
-    "react-virtualized-auto-sizer": "https://esm.sh/react-virtualized-auto-sizer@1.0.24?external=react,react-dom"
+    "react-virtualized-auto-sizer": "https://esm.sh/react-virtualized-auto-sizer@1.0.24?external=react,react-dom",
+    "@tiptap/react": "https://esm.sh/@tiptap/react@2.2.4",
+    "@tiptap/pm": "https://esm.sh/@tiptap/pm@2.2.4",
+    "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2.2.4",
+    "@tiptap/extension-underline": "https://esm.sh/@tiptap/extension-underline@2.2.4",
+    "@tiptap/extension-text-align": "https://esm.sh/@tiptap/extension-text-align@2.2.4",
+    "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2.2.4",
+    "@tiptap/extension-link": "https://esm.sh/@tiptap/extension-link@2.2.4",
+    "@tiptap/extension-table": "https://esm.sh/@tiptap/extension-table@2.2.4",
+    "@tiptap/extension-table-row": "https://esm.sh/@tiptap/extension-table-row@2.2.4",
+    "@tiptap/extension-table-cell": "https://esm.sh/@tiptap/extension-table-cell@2.2.4",
+    "@tiptap/extension-table-header": "https://esm.sh/@tiptap/extension-table-header@2.2.4",
+    "@tiptap/extension-bubble-menu": "https://esm.sh/@tiptap/extension-bubble-menu@2.2.4",
+    "katex": "https://esm.sh/katex@0.16.9",
+    "mermaid": "https://esm.sh/mermaid@10.9.0",
+    "qrcode": "https://esm.sh/qrcode@1.5.3"
   }
 }
 </script>
@@ -335,7 +403,6 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          // Register from root, but file is physically in public/ which is served at root
           navigator.serviceWorker.register('/sw.js').then(registration => {
             console.log('SW registered: ', registration);
           }).catch(registrationError => {

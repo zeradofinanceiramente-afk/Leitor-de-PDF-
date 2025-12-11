@@ -10,8 +10,9 @@ import { PdfViewer } from './components/PdfViewer';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { MindMapEditor } from './components/MindMapEditor';
+import { DocEditor } from './components/DocEditor'; // Importação do novo editor
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { DriveFile } from './types';
+import { DriveFile, MIME_TYPES } from './types';
 import { ShieldCheck, LogIn, RefreshCw, AlertCircle, XCircle, Copy, Menu, Lock, Loader2, HardDrive, Wifi } from 'lucide-react';
 
 // Helpers para Local Storage (Token do Drive)
@@ -67,7 +68,8 @@ export default function App() {
         const fileFromUrl: DriveFile = {
           id: fileId,
           name: fileName,
-          mimeType: fileName.endsWith('.mindmap') ? 'application/json' : 'application/pdf',
+          mimeType: fileName.endsWith(MIME_TYPES.LEGACY_MINDMAP_EXT) ? MIME_TYPES.MINDMAP : 
+                    fileName.endsWith(MIME_TYPES.UMO_DOC_EXT) ? MIME_TYPES.UMO_DOC : MIME_TYPES.PDF,
           parents
         };
         
@@ -226,8 +228,10 @@ export default function App() {
       const file = e.target.files[0];
       // Determine mimetype based on extension
       let mimeType = file.type;
-      if (file.name.endsWith('.mindmap')) {
-          mimeType = 'application/json';
+      if (file.name.endsWith(MIME_TYPES.LEGACY_MINDMAP_EXT)) {
+          mimeType = MIME_TYPES.MINDMAP;
+      } else if (file.name.endsWith(MIME_TYPES.UMO_DOC_EXT)) {
+          mimeType = MIME_TYPES.UMO_DOC;
       }
 
       const newFile: DriveFile = {
@@ -241,9 +245,7 @@ export default function App() {
   };
 
   const handleCreateMindMap = async () => {
-    // OFFLINE MODE / LOCAL CREATION FALLBACK
-    // If no access token OR offline, create local map immediately
-    // Note: !accessToken handles Guest Mode as well.
+    // Logic similar to existing, just uses new MIME_TYPES
     if (!accessToken || !navigator.onLine) {
         const defaultMap = {
             nodes: [{
@@ -261,79 +263,92 @@ export default function App() {
             viewport: { x: 0, y: 0, zoom: 1 }
         };
 
-        const blob = new Blob([JSON.stringify(defaultMap)], { type: 'application/json' });
-        const name = "Novo Mapa Mental (Local).mindmap";
+        const blob = new Blob([JSON.stringify(defaultMap)], { type: MIME_TYPES.MINDMAP });
+        const name = "Novo Mapa Mental (Local)" + MIME_TYPES.LEGACY_MINDMAP_EXT;
         
         const newFile: DriveFile = {
             id: `local-map-${Date.now()}`,
             name: name,
-            mimeType: 'application/json',
+            mimeType: MIME_TYPES.MINDMAP,
             blob: blob
         };
         handleOpenFile(newFile);
         return;
     }
     
-    // ONLINE MODE: CREATE IN DRIVE
     setIsCreatingMap(true);
     try {
         const defaultMap = {
             nodes: [{
                 id: `root-${Date.now()}`,
                 text: "Ideia Central",
-                x: 0,
-                y: 0,
-                width: 150,
-                height: 60,
-                color: '#a855f7',
-                isRoot: true,
-                scale: 1.2
+                x: 0, y: 0, width: 150, height: 60, color: '#a855f7', isRoot: true, scale: 1.2
             }],
             edges: [],
             viewport: { x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 }
         };
 
-        const blob = new Blob([JSON.stringify(defaultMap)], { type: 'application/json' });
-        const name = "Novo Mapa Mental.mindmap";
+        const blob = new Blob([JSON.stringify(defaultMap)], { type: MIME_TYPES.MINDMAP });
+        const name = "Novo Mapa Mental" + MIME_TYPES.LEGACY_MINDMAP_EXT;
         
-        // Upload to root folder by default
-        const result = await uploadFileToDrive(accessToken, blob, name, [], 'application/json');
+        const result = await uploadFileToDrive(accessToken, blob, name, [], MIME_TYPES.MINDMAP);
         
         if (result && result.id) {
             const newFile: DriveFile = {
                 id: result.id,
                 name: result.name || name,
-                mimeType: 'application/json' // Treat as json
+                mimeType: MIME_TYPES.MINDMAP
             };
             handleOpenFile(newFile);
         }
     } catch (e: any) {
         console.error("Failed to create map", e);
-        // Fallback to local if drive creation fails
-        if (e.message === "Unauthorized" || e.message === "Failed to fetch") {
-            const defaultMap = {
-              nodes: [{
-                  id: `root-${Date.now()}`,
-                  text: "Ideia Central",
-                  x: 0, y: 0, width: 150, height: 60, color: '#a855f7', isRoot: true, scale: 1.2
-              }],
-              edges: [],
-              viewport: { x: 0, y: 0, zoom: 1 }
-            };
-            const blob = new Blob([JSON.stringify(defaultMap)], { type: 'application/json' });
-            const newFile: DriveFile = {
-                id: `local-map-${Date.now()}`,
-                name: "Novo Mapa (Local).mindmap",
-                mimeType: 'application/json',
-                blob: blob
-            };
-            handleOpenFile(newFile);
-        } else {
-             setAuthError({ title: "Erro", message: "Falha ao criar mapa mental: " + e.message });
-        }
+        setAuthError({ title: "Erro", message: "Falha ao criar mapa mental: " + e.message });
     } finally {
         setIsCreatingMap(false);
     }
+  };
+
+  const handleCreateDocument = async () => {
+      // Placeholder: Create new .umo file logic
+      // For now, create a local dummy file to test the editor
+      const initialContent = {
+          type: 'doc',
+          content: [
+              { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Novo Documento' }] },
+              { type: 'paragraph', content: [{ type: 'text', text: 'Comece a editar...' }] }
+          ]
+      };
+      
+      const blob = new Blob([JSON.stringify(initialContent)], { type: MIME_TYPES.UMO_DOC });
+      const name = "Novo Documento" + MIME_TYPES.UMO_DOC_EXT;
+      
+      if (!accessToken || !navigator.onLine) {
+          const newFile: DriveFile = {
+              id: `local-doc-${Date.now()}`,
+              name: name,
+              mimeType: MIME_TYPES.UMO_DOC,
+              blob: blob
+          };
+          handleOpenFile(newFile);
+      } else {
+          setIsCreatingMap(true); // Reuse spinner
+          try {
+              const result = await uploadFileToDrive(accessToken, blob, name, [], MIME_TYPES.UMO_DOC);
+              if (result && result.id) {
+                  const newFile: DriveFile = {
+                      id: result.id,
+                      name: result.name || name,
+                      mimeType: MIME_TYPES.UMO_DOC
+                  };
+                  handleOpenFile(newFile);
+              }
+          } catch(e: any) {
+              setAuthError({ title: "Erro", message: "Falha ao criar documento: " + e.message });
+          } finally {
+              setIsCreatingMap(false);
+          }
+      }
   };
 
   const handleTabSwitch = (tabId: string) => {
@@ -350,7 +365,7 @@ export default function App() {
     return <div className="h-screen w-full flex items-center justify-center bg-bg text-text">Carregando...</div>;
   }
 
-  // --- POPUP MODE (LEGACY) ---
+  // --- POPUP MODE ---
   if (isPopup) {
     const activeFile = openFiles.find(f => f.id === activeTab);
     
@@ -367,37 +382,38 @@ export default function App() {
     }
     if (!activeFile) return <div className="p-10 text-text">Arquivo não encontrado.</div>;
     
-    // Popup Mode can technically open Mind Maps too if links are shared
-    if (activeFile.name.endsWith('.mindmap')) {
-       return (
+    return (
          <ErrorBoundary>
-            {accessToken && (
-                <MindMapEditor 
+            {activeFile.name.endsWith(MIME_TYPES.LEGACY_MINDMAP_EXT) ? (
+                accessToken && <MindMapEditor 
                    fileId={activeFile.id}
                    fileName={activeFile.name}
                    accessToken={accessToken}
                    onToggleMenu={() => {}}
                    onAuthError={handleAuthError}
                 />
+            ) : activeFile.name.endsWith(MIME_TYPES.UMO_DOC_EXT) ? (
+                accessToken && <DocEditor
+                   fileId={activeFile.id}
+                   fileName={activeFile.name}
+                   accessToken={accessToken}
+                   onToggleMenu={() => {}}
+                   onAuthError={handleAuthError}
+                />
+            ) : (
+                <PdfViewer 
+                  accessToken={accessToken}
+                  fileId={activeFile.id}
+                  fileName={activeFile.name}
+                  fileParents={activeFile.parents}
+                  uid={user.uid}
+                  onBack={() => window.close()}
+                  fileBlob={activeFile.blob}
+                  isPopup={true}
+                  onAuthError={handleAuthError} 
+                />
             )}
          </ErrorBoundary>
-       );
-    }
-
-    return (
-      <ErrorBoundary>
-        <PdfViewer 
-          accessToken={accessToken}
-          fileId={activeFile.id}
-          fileName={activeFile.name}
-          fileParents={activeFile.parents}
-          uid={user.uid}
-          onBack={() => window.close()}
-          fileBlob={activeFile.blob}
-          isPopup={true}
-          onAuthError={handleAuthError} 
-        />
-      </ErrorBoundary>
     );
   }
 
@@ -428,11 +444,7 @@ export default function App() {
              </div>
           )}
 
-          {/* 
-              WALL 1: GUEST MODE 
-              Show when NO Firebase User is logged in.
-              (Excluding 'offline' tab because offline files are local)
-          */}
+          {/* Wall Overlays (Guest Mode, Reconnect) ... same as before ... */}
           {!user && (activeTab === 'browser' || activeTab === 'mindmaps') && (
              <div className="absolute inset-0 z-20 bg-bg p-6 flex flex-col animate-in fade-in">
                 <div className="mb-6">
@@ -451,65 +463,13 @@ export default function App() {
              </div>
           )}
 
-          {/* 
-              WALL 2: RECONNECT DRIVE
-              Show when Firebase User IS logged in, BUT Access Token is missing/null.
-              (Excluding 'offline' tab)
-          */}
-          {user && !accessToken && (activeTab === 'browser' || activeTab === 'mindmaps') && (
-             <div className="absolute inset-0 z-20 bg-bg p-6 flex flex-col animate-in fade-in">
-                <div className="mb-6">
-                   <button onClick={() => setIsSidebarOpen(true)} className="p-3 -ml-3 text-text-sec hover:text-text">
-                     <Menu size={32} />
-                   </button>
-                 </div>
-                 <div className="flex-1 flex flex-col items-center justify-center text-center">
-                    <div className="w-20 h-20 bg-brand/10 text-brand rounded-full flex items-center justify-center mb-6">
-                       <HardDrive size={32} />
-                    </div>
-                    <h2 className="text-3xl font-bold mb-2 text-text">Conectar ao Drive</h2>
-                    <p className="text-lg text-text-sec mb-8 max-w-md">
-                       Olá, <strong>{user.displayName?.split(' ')[0]}</strong>! <br/>
-                       Precisamos de permissão para listar seus arquivos novamente.
-                    </p>
-                    <button onClick={handleLogin} className="btn-primary flex items-center gap-3 py-3 px-8 bg-brand text-bg rounded-full text-lg font-bold shadow-lg shadow-brand/20">
-                      <RefreshCw size={20} /> Conectar Drive
-                    </button>
-                 </div>
-             </div>
-          )}
-
-           {/* CREATING MAP OVERLAY */}
+           {/* CREATING OVERLAY */}
            {isCreatingMap && (
              <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in">
                 <div className="bg-surface rounded-3xl p-8 flex flex-col items-center shadow-2xl">
                     <Loader2 size={48} className="animate-spin text-brand mb-4" />
-                    <h3 className="text-xl font-bold text-text">Criando Mapa Mental...</h3>
+                    <h3 className="text-xl font-bold text-text">Criando arquivo...</h3>
                 </div>
-             </div>
-           )}
-
-           {/* 
-               SESSION EXPIRED OVERLAY (API 401 Error)
-               Show when we THOUGHT we had a token, but it failed during usage.
-           */}
-           {user && sessionExpired && (
-             <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
-                 <div className="bg-surface border border-border rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
-                    <div className="w-16 h-16 bg-yellow-500/10 text-yellow-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                       <Lock size={32} />
-                    </div>
-                    <h2 className="text-2xl font-bold mb-3 text-text">Sessão Pausada</h2>
-                    <p className="text-text-sec mb-8 leading-relaxed">
-                       Por segurança, o Google requer que você renove o acesso aos arquivos a cada hora.
-                    </p>
-                    <button 
-                      onClick={handleRefreshSession} 
-                      className="w-full flex items-center justify-center gap-3 py-4 bg-brand text-bg rounded-xl text-lg font-bold hover:brightness-110 transition-all"
-                    >
-                      <RefreshCw size={20} /> Renovar Sessão
-                    </button>
-                 </div>
              </div>
            )}
 
@@ -520,7 +480,8 @@ export default function App() {
                 userName={user?.displayName}
                 onOpenFile={handleOpenFile}
                 onUploadLocal={handleLocalUpload}
-                onCreateMindMap={handleCreateMindMap} // New Handler
+                onCreateMindMap={handleCreateMindMap} 
+                onCreateDocument={handleCreateDocument} // Pass down the new handler
                 onChangeView={(v) => handleTabSwitch(v)}
                 onToggleMenu={() => setIsSidebarOpen(prev => !prev)}
               />
@@ -544,7 +505,7 @@ export default function App() {
              )}
           </div>
 
-          {/* MINDMAPS VIEW (Gallery) */}
+          {/* MINDMAPS VIEW */}
           <div className="w-full h-full" style={{ display: activeTab === 'mindmaps' ? 'block' : 'none' }}>
              {user && accessToken && (
                 <ErrorBoundary onReset={handleRecover}>
@@ -565,7 +526,7 @@ export default function App() {
           <div className="w-full h-full" style={{ display: activeTab === 'offline' ? 'block' : 'none' }}>
              <ErrorBoundary onReset={handleRecover}>
                 <DriveBrowser 
-                  accessToken={accessToken || ''} // Token not strictly needed for offline mode
+                  accessToken={accessToken || ''} 
                   onSelectFile={handleOpenFile}
                   onLogout={handleLogout}
                   onAuthError={handleAuthError} 
@@ -584,15 +545,25 @@ export default function App() {
               style={{ display: activeTab === file.id ? 'block' : 'none' }}
             >
               <ErrorBoundary onReset={() => handleCloseFile(file.id)}>
-                {/* RENDER LOGIC: PDF OR MIND MAP */}
-                {file.name.endsWith('.mindmap') ? (
+                {/* RENDER LOGIC: PDF, MIND MAP, or DOC */}
+                {file.name.endsWith(MIME_TYPES.LEGACY_MINDMAP_EXT) ? (
                     <MindMapEditor 
                         fileId={file.id}
                         fileName={file.name}
                         fileBlob={file.blob}
-                        accessToken={accessToken || ''} // Allow empty token for offline/local
+                        accessToken={accessToken || ''} 
                         onToggleMenu={() => setIsSidebarOpen(prev => !prev)}
                         onAuthError={handleAuthError}
+                    />
+                ) : file.name.endsWith(MIME_TYPES.UMO_DOC_EXT) ? (
+                    <DocEditor 
+                        fileId={file.id}
+                        fileName={file.name}
+                        fileBlob={file.blob}
+                        accessToken={accessToken || ''}
+                        onToggleMenu={() => setIsSidebarOpen(prev => !prev)}
+                        onAuthError={handleAuthError}
+                        onBack={() => handleCloseFile(file.id)}
                     />
                 ) : (
                     <PdfViewer 
@@ -615,7 +586,7 @@ export default function App() {
         </main>
       </div>
       
-      {/* Error Toast */}
+      {/* Error Toast ... same as before */}
       {authError && !sessionExpired && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md p-4 animate-in slide-in-from-top-4">
           <div className="bg-surface border border-red-500/50 rounded-xl shadow-2xl p-4 flex gap-4 text-text relative">

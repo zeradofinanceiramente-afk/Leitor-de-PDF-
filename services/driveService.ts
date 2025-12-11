@@ -1,5 +1,5 @@
 
-import { DriveFile } from "../types";
+import { DriveFile, MIME_TYPES } from "../types";
 
 // Parâmetros essenciais para suportar Drives de Organização/Equipe
 const LIST_PARAMS = "&supportsAllDrives=true&includeItemsFromAllDrives=true";
@@ -7,9 +7,8 @@ const WRITE_PARAMS = "&supportsAllDrives=true";
 
 export async function listDriveContents(accessToken: string, folderId: string = 'root'): Promise<DriveFile[]> {
   let query = "";
-  // Alterado para aceitar PDFs E arquivos .mindmap (que geralmente são application/json ou octet-stream com nome específico)
-  // Filtramos por trash=false e (Pasta OU PDF OU nome contém .mindmap)
-  const baseConstraints = "trashed=false and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder' or name contains '.mindmap')";
+  // Alterado para aceitar PDFs, Mapas Mentais (.mindmap) e Docs Umo (.umo)
+  const baseConstraints = `trashed=false and (mimeType='${MIME_TYPES.PDF}' or mimeType='${MIME_TYPES.FOLDER}' or name contains '${MIME_TYPES.LEGACY_MINDMAP_EXT}' or name contains '${MIME_TYPES.UMO_DOC_EXT}')`;
   
   if (folderId === 'shared-with-me') {
     query = `sharedWithMe=true and ${baseConstraints}`;
@@ -52,7 +51,7 @@ export async function listDriveContents(accessToken: string, folderId: string = 
 
 export async function searchMindMaps(accessToken: string): Promise<DriveFile[]> {
   // Query específica para encontrar todos os mapas mentais, independente da pasta
-  const query = "name contains '.mindmap' and trashed=false";
+  const query = `name contains '${MIME_TYPES.LEGACY_MINDMAP_EXT}' and trashed=false`;
   const fields = "files(id, name, mimeType, thumbnailLink, parents, starred, modifiedTime)";
   
   const response = await fetch(
@@ -96,7 +95,7 @@ export async function uploadFileToDrive(
   file: Blob, 
   name: string, 
   parents: string[] = [],
-  mimeType: string = 'application/pdf' // Added flexible mimeType
+  mimeType: string = MIME_TYPES.PDF // Added flexible mimeType
 ): Promise<any> {
   const metadata = {
     name: name,
@@ -129,7 +128,7 @@ export async function updateDriveFile(
   accessToken: string, 
   fileId: string, 
   file: Blob,
-  mimeType: string = 'application/pdf' // Added flexible mimeType
+  mimeType: string = MIME_TYPES.PDF // Added flexible mimeType
 ): Promise<any> {
   // PATCH request to update file content
   const metadata = {

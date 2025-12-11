@@ -3,18 +3,19 @@ import React, { useEffect, useState } from 'react';
 import { DriveFile } from '../types';
 import { getRecentFiles } from '../services/storageService';
 import { generateMindMapFromText } from '../services/aiService';
-import { FileText, Clock, ArrowRight, Upload, Menu, Workflow, WifiOff, Sparkles, Loader2 } from 'lucide-react';
+import { FileText, Clock, ArrowRight, Upload, Menu, Workflow, WifiOff, Sparkles, Loader2, FilePlus } from 'lucide-react';
 
 interface DashboardProps {
   userName?: string | null;
   onOpenFile: (file: DriveFile) => void;
   onUploadLocal: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onCreateMindMap: () => void; 
+  onCreateMindMap: () => void;
+  onCreateDocument: () => void;
   onChangeView: (view: 'browser' | 'offline') => void;
   onToggleMenu: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUploadLocal, onCreateMindMap, onChangeView, onToggleMenu }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUploadLocal, onCreateMindMap, onCreateDocument, onChangeView, onToggleMenu }) => {
   const [recents, setRecents] = useState<(DriveFile & { lastOpened: Date })[]>([]);
   const [greeting, setGreeting] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -145,6 +146,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
         </button>
 
         <button 
+          onClick={onCreateDocument}
+          className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 flex flex-col items-start gap-6 shadow-sm hover:shadow-xl"
+        >
+          <div className="w-16 h-16 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+            <FilePlus size={32} />
+          </div>
+          <div>
+             <h3 className="text-2xl font-medium mb-2 text-text">Novo Documento</h3>
+             <p className="text-base text-text-sec">
+               {isOnline && userName ? 'Criar no Drive' : 'Criar Localmente'}
+             </p>
+          </div>
+        </button>
+
+        <button 
           onClick={onCreateMindMap}
           className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 flex flex-col items-start gap-6 shadow-sm hover:shadow-xl"
         >
@@ -159,40 +175,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
           </div>
         </button>
 
-        {/* AI Generator Card */}
-        <label className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 cursor-pointer flex flex-col items-start gap-6 shadow-sm hover:shadow-xl relative overflow-hidden">
-           <div className="w-16 h-16 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-            <Sparkles size={32} />
-          </div>
-          <div>
-             <h3 className="text-2xl font-medium mb-2 text-text">Gerar com IA</h3>
-             <p className="text-base text-text-sec">Criar Mapa a partir de .txt</p>
-          </div>
-          <input 
-              type="file" 
-              accept=".txt" 
-              className="hidden" 
-              onChange={handleTxtForAiUpload}
-              disabled={!isOnline} // AI needs internet
-          />
-          {!isOnline && (
-            <div className="absolute inset-0 bg-surface/80 flex items-center justify-center pointer-events-none">
-               <span className="text-sm font-medium text-text-sec flex items-center gap-2"><WifiOff size={16}/> Requer Internet</span>
-            </div>
-          )}
-        </label>
-
         <label className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 cursor-pointer flex flex-col items-start gap-6 shadow-sm hover:shadow-xl">
            <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
             <Upload size={32} />
           </div>
           <div>
              <h3 className="text-2xl font-medium mb-2 text-text">Arquivo Local</h3>
-             <p className="text-base text-text-sec">PDF ou Mapa Mental (.mindmap)</p>
+             <p className="text-base text-text-sec">PDF, Mapa Mental ou Documento</p>
           </div>
           <input 
               type="file" 
-              accept="application/pdf,.mindmap,application/json" 
+              accept="application/pdf,.mindmap,.umo,application/json" 
               className="hidden" 
               id="local-upload-dash"
               onChange={onUploadLocal}
@@ -220,6 +213,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {recents.map((file) => {
                const isMindMap = file.name.endsWith('.mindmap');
+               const isDoc = file.name.endsWith('.umo');
+               
                return (
                 <div 
                   key={file.id}
@@ -227,11 +222,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
                   className="group relative bg-surface rounded-[1.5rem] p-5 hover:brightness-110 transition-all cursor-pointer border border-border hover:border-brand/50 flex flex-col gap-4 shadow-sm hover:shadow-xl"
                 >
                   <div className="w-full aspect-[4/5] bg-bg rounded-xl overflow-hidden relative shadow-inner shrink-0">
-                    {file.thumbnailLink && !isMindMap ? (
+                    {file.thumbnailLink && !isMindMap && !isDoc ? (
                       <img src={file.thumbnailLink} alt="" className="w-full h-full object-cover object-top opacity-80 group-hover:opacity-100 transition-opacity" />
                     ) : (
-                      <div className={`w-full h-full flex items-center justify-center bg-bg ${isMindMap ? 'text-purple-400' : 'text-text-sec'}`}>
-                        {isMindMap ? <Workflow size={64} className="opacity-80"/> : <FileText size={64} className="opacity-20" />}
+                      <div className={`w-full h-full flex items-center justify-center bg-bg ${isMindMap ? 'text-purple-400' : isDoc ? 'text-blue-400' : 'text-text-sec'}`}>
+                        {isMindMap ? <Workflow size={64} className="opacity-80"/> : 
+                         isDoc ? <FilePlus size={64} className="opacity-80"/> : 
+                         <FileText size={64} className="opacity-20" />}
                       </div>
                     )}
                     {/* Hover Overlay */}

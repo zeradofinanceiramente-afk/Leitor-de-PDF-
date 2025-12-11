@@ -1,5 +1,14 @@
 import { User } from "firebase/auth";
 
+export const MIME_TYPES = {
+  PDF: 'application/pdf',
+  FOLDER: 'application/vnd.google-apps.folder',
+  MINDMAP: 'application/json', // Using JSON for mindmaps for compatibility
+  UMO_DOC: 'application/umo+json', // Custom mime type for Umo Editor docs (stored as JSON)
+  LEGACY_MINDMAP_EXT: '.mindmap',
+  UMO_DOC_EXT: '.umo'
+};
+
 export interface DriveFile {
   id: string;
   name: string;
