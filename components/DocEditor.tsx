@@ -9,7 +9,7 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
-import { Menu, ArrowLeft, Loader2, Save, WifiOff, RefreshCw, MoreVertical, FileDown, Printer, FileType, ScrollText, StickyNote } from 'lucide-react';
+import { Menu, ArrowLeft, Loader2, Save, WifiOff, RefreshCw, MoreVertical, FileDown, Printer, FileType, ScrollText, StickyNote, CloudOff } from 'lucide-react';
 
 import { DocToolbar } from './doc/DocToolbar';
 import { AiBubbleMenu } from './doc/AiBubbleMenu';
@@ -18,6 +18,7 @@ import MermaidNode from './doc/extensions/MermaidNode';
 import QrCodeNode from './doc/extensions/QrCodeNode';
 
 import { updateDriveFile, downloadDriveFile } from '../services/driveService';
+import { saveOfflineFile, addToSyncQueue } from '../services/storageService';
 import { MIME_TYPES } from '../types';
 
 // Custom Extension Definitions (Math, Mermaid, QrCode) keep same...
@@ -66,6 +67,7 @@ export const DocEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessT
   const [zoom, setZoom] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'error'>('saved');
+  const [isOfflineSaved, setIsOfflineSaved] = useState(false);
   const [isLoadingContent, setIsLoadingContent] = useState(true);
   
   // View & Menu States
@@ -99,7 +101,7 @@ export const DocEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessT
     },
     onUpdate: () => {
         setSaveStatus('unsaved');
-        if (!isLocalFile && navigator.onLine) {
+        if (!isLocalFile) {
             if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
             saveTimeoutRef.current = setTimeout(handleSave, 3000); // Autosave
         }
@@ -171,13 +173,58 @@ export const DocEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessT
           return;
       }
 
+      // Offline Save Handling
+      if (!navigator.onLine) {
+          try {
+              // 1. Salvar no cache offline (acesso imediato)
+              await saveOfflineFile({
+                  id: fileId,
+                  name: fileName,
+                  mimeType: MIME_TYPES.UMO_DOC
+              }, blob);
+
+              // 2. Adicionar à fila de sincronização
+              await addToSyncQueue({
+                  fileId: fileId,
+                  action: 'update',
+                  blob: blob,
+                  name: fileName,
+                  mimeType: MIME_TYPES.UMO_DOC
+              });
+
+              setSaveStatus('saved');
+              setIsOfflineSaved(true);
+          } catch (e) {
+              console.error("Offline save failed", e);
+              setSaveStatus('error');
+          } finally {
+              setIsSaving(false);
+          }
+          return;
+      }
+
+      // Online Save
       try {
           await updateDriveFile(accessToken, fileId, blob, MIME_TYPES.UMO_DOC);
           setSaveStatus('saved');
+          setIsOfflineSaved(false);
       } catch (e: any) {
           console.error("Save failed", e);
-          setSaveStatus('error');
-          if (e.message === "Unauthorized" && onAuthError) onAuthError();
+          
+          // Se falhar e não for erro de auth, tenta salvar offline como fallback
+          if (e.message !== "Unauthorized") {
+              try {
+                  await saveOfflineFile({ id: fileId, name: fileName, mimeType: MIME_TYPES.UMO_DOC }, blob);
+                  await addToSyncQueue({ fileId: fileId, action: 'update', blob: blob, name: fileName, mimeType: MIME_TYPES.UMO_DOC });
+                  setSaveStatus('saved');
+                  setIsOfflineSaved(true);
+              } catch (offlineErr) {
+                  setSaveStatus('error');
+              }
+          } else {
+              setSaveStatus('error');
+              if (onAuthError) onAuthError();
+          }
       } finally {
           setIsSaving(false);
       }
@@ -237,10 +284,16 @@ export const DocEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessT
                 <div className="flex flex-col">
                     <h1 className="font-medium text-lg truncate max-w-[200px] md:max-w-md">{fileName.replace('.umo', '')}</h1>
                     <div className="flex items-center gap-2 text-xs text-text-sec">
-                        {isLocalFile ? <span className="flex items-center gap-1"><WifiOff size={10}/> Local</span> : <span>Salvo no Drive</span>}
+                        {isLocalFile ? (
+                            <span className="flex items-center gap-1"><WifiOff size={10}/> Local</span> 
+                        ) : isOfflineSaved ? (
+                            <span className="flex items-center gap-1 text-yellow-500 font-medium"><CloudOff size={10}/> Salvo Offline</span>
+                        ) : (
+                            <span>Salvo no Drive</span>
+                        )}
                         <span>•</span>
                         <span className={saveStatus === 'error' ? 'text-red-400' : ''}>
-                            {saveStatus === 'saved' ? 'Salvo' : saveStatus === 'unsaved' ? 'Editando...' : 'Erro ao salvar'}
+                            {saveStatus === 'saved' ? 'Pronto' : saveStatus === 'unsaved' ? 'Editando...' : 'Erro ao salvar'}
                         </span>
                     </div>
                 </div>
@@ -280,7 +333,7 @@ export const DocEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessT
                         'bg-surface border border-border text-text-sec opacity-80'
                     }`}
                 >
-                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : saveStatus === 'error' ? <RefreshCw size={16} /> : <Save size={16} />}
+                    {isSaving ? <Loader2 size={16} className="animate-spin" /> : saveStatus === 'error' ? <RefreshCw size={16} /> : isOfflineSaved ? <CloudOff size={16} /> : <Save size={16} />}
                     <span className="hidden sm:inline">{isLocalFile ? 'Baixar' : 'Salvar'}</span>
                 </button>
 
