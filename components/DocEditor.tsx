@@ -133,7 +133,7 @@ export const DocEditor: React.FC<Props> = ({ fileId, fileName, fileBlob, accessT
                       } catch (e) {
                           editor.commands.setContent(text);
                       }
-                      editor.commands.clearHistory(); 
+                      // Note: clearHistory() is removed because it's not a standard command in Tiptap's StarterKit History extension
                   }
               } else if (fileId.startsWith('new-') || isLocalFile) {
                   if (editor.isEmpty) {
