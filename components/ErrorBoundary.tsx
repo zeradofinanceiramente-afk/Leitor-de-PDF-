@@ -1,3 +1,4 @@
+
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, Home, RefreshCw } from 'lucide-react';
 

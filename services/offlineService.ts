@@ -1,7 +1,8 @@
 
+const CACHE_NAME = 'pdf-annotator-offline-manual-v1';
+
 export async function cacheAppResources(onProgress?: (progress: number) => void): Promise<string> {
-  const cacheName = 'pdf-annotator-offline-manual-v1';
-  const cache = await caches.open(cacheName);
+  const cache = await caches.open(CACHE_NAME);
   let totalBytes = 0;
 
   // 1. Core Static Assets (Always required)
@@ -84,6 +85,45 @@ export async function cacheAppResources(onProgress?: (progress: number) => void)
   }));
 
   // Return formatted size
+  const mb = totalBytes / (1024 * 1024);
+  if (mb < 1) {
+      return `${(totalBytes / 1024).toFixed(0)} KB`;
+  }
+  return `${mb.toFixed(1)} MB`;
+}
+
+/**
+ * Verifica se o cache existe e calcula seu tamanho total.
+ * Usado para persistir o estado "Baixado" na UI.
+ */
+export async function getOfflineCacheSize(): Promise<string | null> {
+  if (!('caches' in window)) return null;
+
+  const hasCache = await caches.has(CACHE_NAME);
+  if (!hasCache) return null;
+
+  const cache = await caches.open(CACHE_NAME);
+  const keys = await cache.keys();
+  
+  // Se o cache existe mas está vazio, consideramos não baixado
+  if (keys.length === 0) return null;
+
+  let totalBytes = 0;
+  // Iteramos para somar o tamanho (pode ser custoso se houver milhares de arquivos, 
+  // mas para um app PWA é geralmente rápido)
+  try {
+    for (const request of keys) {
+        const response = await cache.match(request);
+        if (response) {
+            const blob = await response.clone().blob();
+            totalBytes += blob.size;
+        }
+    }
+  } catch (e) {
+      console.warn("Erro ao calcular tamanho do cache", e);
+      return null;
+  }
+
   const mb = totalBytes / (1024 * 1024);
   if (mb < 1) {
       return `${(totalBytes / 1024).toFixed(0)} KB`;

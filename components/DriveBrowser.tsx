@@ -12,7 +12,7 @@ interface Props {
   onAuthError: () => void;
   onToggleMenu: () => void;
   onCreateMindMap?: () => void;
-  mode?: 'default' | 'mindmaps';
+  mode?: 'default' | 'mindmaps' | 'offline';
 }
 
 interface BreadcrumbItem {
@@ -27,11 +27,12 @@ const SECTIONS = [
 ];
 
 export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAuthError, onToggleMenu, onCreateMindMap, mode = 'default' }) => {
-  const [currentFolder, setCurrentFolder] = useState<BreadcrumbItem>(
-    mode === 'mindmaps' 
-      ? { id: 'mindmaps', name: 'Meus Mapas Mentais' } 
-      : SECTIONS[0]
-  );
+  const [currentFolder, setCurrentFolder] = useState<BreadcrumbItem>(() => {
+    if (mode === 'mindmaps') return { id: 'mindmaps', name: 'Meus Mapas Mentais' };
+    if (mode === 'offline') return { id: 'offline', name: 'Arquivos Offline' };
+    return SECTIONS[0];
+  });
+  
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   
   const [files, setFiles] = useState<DriveFile[]>([]);
@@ -81,7 +82,18 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     // Lógica principal de carregamento
     const loadFiles = async () => {
         try {
-            // Se estiver offline, carrega direto do banco local
+            // Se modo for 'offline', SEMPRE carrega do banco local, independente da rede
+            if (mode === 'offline') {
+                const localFiles = await listOfflineFiles();
+                if (mounted) {
+                    setFiles(localFiles);
+                    setFilteredFiles(localFiles);
+                    setLoading(false);
+                }
+                return;
+            }
+
+            // Se estiver offline mas modo 'default'/'mindmaps', carrega fallback do banco local
             if (!navigator.onLine) {
                 const localFiles = await listOfflineFiles();
                 if (mounted) {
@@ -141,7 +153,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     loadFiles();
 
     return () => { mounted = false; };
-  }, [accessToken, currentFolder.id, onAuthError, isOfflineMode]);
+  }, [accessToken, currentFolder.id, onAuthError, isOfflineMode, mode]);
 
   useEffect(() => {
     const results = files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()));
@@ -164,11 +176,14 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
   };
 
   const handleFolderClick = (folder: DriveFile) => {
+    if (mode === 'offline') return; // Sem navegação de pastas no modo offline por enquanto
     setBreadcrumbs(prev => [...prev, currentFolder]);
     setCurrentFolder({ id: folder.id, name: folder.name });
   };
 
   const handleBreadcrumbClick = (item: BreadcrumbItem, index: number) => {
+    if (mode === 'offline') return; 
+    
     if (mode === 'mindmaps' && index === 0 && item.id === 'mindmaps') {
         setCurrentFolder({ id: 'mindmaps', name: 'Meus Mapas Mentais' });
         setBreadcrumbs([]);
@@ -241,7 +256,18 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
     if (!actionFile) return;
     setIsDeleting(true);
     try {
-      await deleteDriveFile(accessToken, actionFile.id);
+      if (mode === 'offline') {
+          // No modo offline, "Excluir" remove do cache local
+          await deleteOfflineFile(actionFile.id);
+          setOfflineFiles(prev => {
+              const next = new Set(prev);
+              next.delete(actionFile.id);
+              return next;
+          });
+      } else {
+          await deleteDriveFile(accessToken, actionFile.id);
+      }
+      
       const updatedFiles = files.filter(f => f.id !== actionFile.id);
       setFiles(updatedFiles);
       setFilteredFiles(updatedFiles);
@@ -309,6 +335,11 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                 next.delete(actionFile.id);
                 return next;
             });
+            // Se estiver no modo offline, remover da lista visual também
+            if (mode === 'offline') {
+                setFiles(prev => prev.filter(f => f.id !== actionFile.id));
+                setFilteredFiles(prev => prev.filter(f => f.id !== actionFile.id));
+            }
         } else {
             let blob = actionFile.blob;
             if (!blob) {
@@ -382,7 +413,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
              </div>
              <h3 className="text-xl font-bold mb-2">Excluir Arquivo?</h3>
              <p className="text-text-sec mb-6">
-                Tem certeza que deseja excluir <strong>"{actionFile.name}"</strong>? Esta ação enviará o arquivo para a lixeira do Drive.
+                Tem certeza que deseja excluir <strong>"{actionFile.name}"</strong>? 
+                {mode === 'offline' ? ' Isso removerá o arquivo do armazenamento local.' : ' Esta ação enviará o arquivo para a lixeira do Drive.'}
              </p>
              <div className="flex justify-end gap-3">
                <button onClick={() => setShowDeleteModal(false)} className="px-4 py-2 text-text-sec hover:text-text">Cancelar</button>
@@ -395,8 +427,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
         </div>
       )}
 
-      {/* Move Modal */}
-      {showMoveModal && actionFile && (
+      {/* Move Modal (Only if NOT offline mode) */}
+      {showMoveModal && actionFile && mode !== 'offline' && (
          <MoveFileModal 
            accessToken={accessToken} 
            file={actionFile} 
@@ -409,8 +441,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
          />
       )}
 
-      {/* Drive Sidebar (Desktop) */}
-      {mode !== 'mindmaps' && (
+      {/* Drive Sidebar (Desktop) - Hide in offline/mindmap modes for cleaner look */}
+      {mode === 'default' && (
         <div className="hidden md:flex flex-col w-80 bg-surface/30 border-r border-border p-6 gap-3 shrink-0">
           <div className="text-sm font-bold text-text-sec uppercase tracking-wider mb-2 px-4">Organização</div>
           {SECTIONS.map(section => {
@@ -489,7 +521,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
           </div>
 
           {/* Mobile Tabs */}
-          {mode !== 'mindmaps' && (
+          {mode === 'default' && (
             <div className="md:hidden flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none -mx-6 px-6">
                {SECTIONS.map(section => {
                   const Icon = section.icon;
@@ -512,8 +544,8 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
             </div>
           )}
 
-          {/* Breadcrumbs */}
-          {mode !== 'mindmaps' && (
+          {/* Breadcrumbs (Hide in Offline Mode) */}
+          {mode !== 'mindmaps' && mode !== 'offline' && (
             <div className="flex items-center gap-2 overflow-x-auto pb-4 scrollbar-none text-base min-h-[40px]">
                {breadcrumbs.length > 0 && (
                  <>
@@ -585,7 +617,9 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                      <p className="text-xl">
                         {mode === 'mindmaps' 
                             ? 'Nenhum mapa mental encontrado.' 
-                            : 'Esta pasta está vazia.'}
+                            : mode === 'offline' 
+                                ? 'Nenhum arquivo offline encontrado.'
+                                : 'Esta pasta está vazia.'}
                      </p>
                      {mode === 'mindmaps' && onCreateMindMap && (
                          <button onClick={onCreateMindMap} className="text-brand font-bold hover:underline">
@@ -597,7 +631,7 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                  <div className={viewMode === 'grid' ? "grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 pb-10" : "flex flex-col gap-4 pb-10"}>
                     
                     {/* Back Button */}
-                    {mode !== 'mindmaps' && breadcrumbs.length > 0 && search === '' && (
+                    {mode !== 'mindmaps' && mode !== 'offline' && breadcrumbs.length > 0 && search === '' && (
                         viewMode === 'grid' ? (
                           <button
                             onClick={() => {
@@ -751,24 +785,30 @@ export const DriveBrowser: React.FC<Props> = ({ accessToken, onSelectFile, onAut
                                                 <div className="h-px bg-border my-1"></div>
                                             </>
                                         )}
-                                        <button 
-                                        onClick={handleRenameClick} 
-                                        className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
-                                        >
-                                        <Edit2 size={16} /> Renomear
-                                        </button>
-                                        <button 
-                                        onClick={handleMoveClick}
-                                        className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
-                                        >
-                                        <FolderInput size={16} /> Mover
-                                        </button>
-                                        <div className="h-px bg-border my-1"></div>
+                                        {/* Renomear e Mover apenas em modo online/default, ou se quiser permitir renomear offline, ajustar lógica */}
+                                        {mode !== 'offline' && (
+                                          <>
+                                            <button 
+                                              onClick={handleRenameClick} 
+                                              className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
+                                            >
+                                              <Edit2 size={16} /> Renomear
+                                            </button>
+                                            <button 
+                                              onClick={handleMoveClick}
+                                              className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-white/5 rounded-lg text-sm text-text text-left transition-colors"
+                                            >
+                                              <FolderInput size={16} /> Mover
+                                            </button>
+                                            <div className="h-px bg-border my-1"></div>
+                                          </>
+                                        )}
+                                        
                                         <button 
                                         onClick={handleDeleteClick} 
                                         className="flex items-center gap-3 w-full px-3 py-2.5 hover:bg-red-500/10 rounded-lg text-sm text-red-400 hover:text-red-300 text-left transition-colors"
                                         >
-                                        <Trash2 size={16} /> Excluir
+                                        <Trash2 size={16} /> Excluir {mode === 'offline' ? '(Local)' : ''}
                                         </button>
                                     </>
                                 )}

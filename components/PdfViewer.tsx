@@ -38,9 +38,17 @@ interface Props {
   onAuthError?: () => void;
 }
 
+interface PdfViewerContentProps extends Props {
+  originalBlob: Blob | null;
+  setOriginalBlob: (b: Blob) => void;
+  pdfDoc: PDFDocumentProxy | null;
+  pageDimensions: { width: number, height: number } | null;
+  jumpToPageRef: React.MutableRefObject<((page: number) => void) | null>;
+}
+
 // Inner Component to consume Context
-const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOriginalBlob: (b: Blob) => void, pdfDoc: PDFDocumentProxy | null, pageDimensions: { width: number, height: number } | null }> = ({ 
-  accessToken, fileId, fileName, fileParents, onBack, originalBlob, setOriginalBlob, pdfDoc, pageDimensions 
+const PdfViewerContent: React.FC<PdfViewerContentProps> = ({ 
+  accessToken, fileId, fileName, fileParents, onBack, originalBlob, setOriginalBlob, pdfDoc, pageDimensions, jumpToPageRef 
 }) => {
   const { 
     scale, setScale, activeTool, settings, 
@@ -50,6 +58,15 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
   
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<FixedSizeList>(null);
+
+  // Bind jumpToPage logic for Provider
+  useEffect(() => {
+    jumpToPageRef.current = (page: number) => {
+        if (listRef.current) {
+            listRef.current.scrollToItem(page - 1, 'start');
+        }
+    };
+  }, [jumpToPageRef]);
 
   // --- Interaction State ---
   const [showSidebar, setShowSidebar] = useState(false);
@@ -153,7 +170,7 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
               mimeType: 'application/pdf'
           });
           
-          alert("Sem internet. Arquivo salvo na fila de sincronização e disponível offline.");
+          alert("Sem internet. Arquivo atualizado offline e salvo na fila de sincronização.");
           setIsSaving(false);
           return;
       }
@@ -169,9 +186,10 @@ const PdfViewerContent: React.FC<Props & { originalBlob: Blob | null, setOrigina
               if (isOfflineAvailable) {
                   const fileMeta = { id: fileId, name: fileName, mimeType: 'application/pdf', parents: fileParents };
                   await saveOfflineFile(fileMeta, newBlob);
+                  alert("Arquivo atualizado no Drive e na cópia Offline!");
+              } else {
+                  alert("Arquivo atualizado com sucesso!");
               }
-              
-              alert("Arquivo atualizado com sucesso!");
            } catch (e: any) {
               if (e.message.includes('403') || e.message.includes('permission')) {
                  setShowPermissionModal(true);
@@ -533,37 +551,47 @@ Entrada: "${text}"`;
   );
 };
 
-// Main Wrapper that provides context
 export const PdfViewer: React.FC<Props> = (props) => {
-  const { pdfDoc, originalBlob, setOriginalBlob, numPages, loading, scale, pageDimensions } = usePdfDocument({
-    fileId: props.fileId, fileBlob: props.fileBlob, accessToken: props.accessToken, onAuthError: props.onAuthError
+  const { pdfDoc, originalBlob, setOriginalBlob, numPages, loading, error, scale: docScale, setScale: setDocScale, pageDimensions } = usePdfDocument({
+    fileId: props.fileId,
+    fileBlob: props.fileBlob,
+    accessToken: props.accessToken,
+    onAuthError: props.onAuthError
   });
 
-  const { annotations, addAnnotation, removeAnnotation } = usePdfAnnotations(props.fileId, props.uid, pdfDoc);
+  const { annotations, addAnnotation, removeAnnotation } = usePdfAnnotations(
+    props.fileId, 
+    props.uid, 
+    pdfDoc
+  );
 
-  // Jump handler (will be improved with refs in content)
-  const handleJump = (page: number) => {
-     // react-window handles scroll via prop updates handled in content
-  };
+  const jumpToPageRef = useRef<((page: number) => void) | null>(null);
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-bg"><Loader2 className="animate-spin text-brand" size={40}/></div>;
+  if (loading) {
+     return <div className="flex h-full items-center justify-center bg-bg text-text"><Loader2 className="animate-spin text-brand" size={40}/></div>;
+  }
+
+  if (error) {
+     return <div className="flex h-full items-center justify-center text-red-500">{error}</div>;
+  }
 
   return (
     <PdfProvider
-      initialScale={scale}
+      initialScale={docScale}
       numPages={numPages}
       annotations={annotations}
       onAddAnnotation={addAnnotation}
       onRemoveAnnotation={removeAnnotation}
-      onJumpToPage={handleJump}
+      onJumpToPage={(page) => jumpToPageRef.current?.(page)}
     >
-      <PdfViewerContent 
-        {...props} 
-        originalBlob={originalBlob} 
-        setOriginalBlob={setOriginalBlob} 
-        pdfDoc={pdfDoc}
-        pageDimensions={pageDimensions}
-      />
+       <PdfViewerContent 
+          {...props} 
+          originalBlob={originalBlob}
+          setOriginalBlob={setOriginalBlob}
+          pdfDoc={pdfDoc}
+          pageDimensions={pageDimensions}
+          jumpToPageRef={jumpToPageRef}
+       />
     </PdfProvider>
   );
 };

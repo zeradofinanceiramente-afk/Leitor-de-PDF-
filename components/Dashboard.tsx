@@ -10,7 +10,7 @@ interface DashboardProps {
   onOpenFile: (file: DriveFile) => void;
   onUploadLocal: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onCreateMindMap: () => void; 
-  onChangeView: (view: 'browser') => void;
+  onChangeView: (view: 'browser' | 'offline') => void;
   onToggleMenu: () => void;
 }
 
@@ -76,6 +76,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
       }
   };
 
+  const handleDriveNavigation = () => {
+    if (isOnline) {
+      onChangeView('browser');
+    } else {
+      onChangeView('offline');
+    }
+  };
+
   return (
     <div className="flex-1 h-full overflow-y-auto bg-bg text-text p-6 md:p-12 relative">
       
@@ -119,22 +127,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
       {/* Quick Actions - Larger Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-16">
         <button 
-          onClick={() => onChangeView('browser')}
+          onClick={handleDriveNavigation}
           className="p-8 rounded-[2rem] bg-surface hover:brightness-110 transition-all group text-left border border-border hover:border-brand/50 flex flex-col items-start gap-6 shadow-sm hover:shadow-xl relative overflow-hidden"
-          disabled={!isOnline && !userName} // Disable if guest and offline (can't login)
+          disabled={!isOnline && !userName && recents.length === 0} // Disable only if guest with no recents and no net
         >
           <div className="w-16 h-16 rounded-2xl bg-brand/10 text-brand flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
-            <FileText size={32} />
+            {isOnline ? <FileText size={32} /> : <WifiOff size={32} />}
           </div>
           <div>
-             <h3 className="text-2xl font-medium mb-2 text-text">Navegar no Drive</h3>
-             <p className="text-base text-text-sec">Acesse sua biblioteca</p>
+             <h3 className="text-2xl font-medium mb-2 text-text">
+                {isOnline ? 'Navegar no Drive' : 'Arquivos Offline'}
+             </h3>
+             <p className="text-base text-text-sec">
+                {isOnline ? 'Acesse sua biblioteca' : 'Acesse arquivos baixados'}
+             </p>
           </div>
-          {!isOnline && (
-            <div className="absolute inset-0 bg-surface/80 flex items-center justify-center">
-               <span className="text-sm font-medium text-text-sec flex items-center gap-2"><WifiOff size={16}/> Indisponível Offline</span>
-            </div>
-          )}
         </button>
 
         <button 

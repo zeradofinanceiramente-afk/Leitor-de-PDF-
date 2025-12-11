@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
@@ -36,7 +37,7 @@ export default function App() {
   
   const [sessionExpired, setSessionExpired] = useState(false);
   
-  // activeTab controls what is currently visible: 'dashboard' | 'browser' | 'mindmaps' | [fileId]
+  // activeTab controls what is currently visible: 'dashboard' | 'browser' | 'mindmaps' | 'offline' | [fileId]
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [openFiles, setOpenFiles] = useState<DriveFile[]>([]);
   
@@ -47,7 +48,7 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
-  const isViewerActive = !['dashboard', 'browser', 'mindmaps'].includes(activeTab);
+  const isViewerActive = !['dashboard', 'browser', 'mindmaps', 'offline'].includes(activeTab);
 
   // Monitor URL Params
   useEffect(() => {
@@ -430,6 +431,7 @@ export default function App() {
           {/* 
               WALL 1: GUEST MODE 
               Show when NO Firebase User is logged in.
+              (Excluding 'offline' tab because offline files are local)
           */}
           {!user && (activeTab === 'browser' || activeTab === 'mindmaps') && (
              <div className="absolute inset-0 z-20 bg-bg p-6 flex flex-col animate-in fade-in">
@@ -452,7 +454,7 @@ export default function App() {
           {/* 
               WALL 2: RECONNECT DRIVE
               Show when Firebase User IS logged in, BUT Access Token is missing/null.
-              This differentiates "Who are you?" from "I need permission".
+              (Excluding 'offline' tab)
           */}
           {user && !accessToken && (activeTab === 'browser' || activeTab === 'mindmaps') && (
              <div className="absolute inset-0 z-20 bg-bg p-6 flex flex-col animate-in fade-in">
@@ -557,6 +559,21 @@ export default function App() {
                   />
                 </ErrorBoundary>
              )}
+          </div>
+
+          {/* OFFLINE FILES VIEW */}
+          <div className="w-full h-full" style={{ display: activeTab === 'offline' ? 'block' : 'none' }}>
+             <ErrorBoundary onReset={handleRecover}>
+                <DriveBrowser 
+                  accessToken={accessToken || ''} // Token not strictly needed for offline mode
+                  onSelectFile={handleOpenFile}
+                  onLogout={handleLogout}
+                  onAuthError={handleAuthError} 
+                  onToggleMenu={() => setIsSidebarOpen(prev => !prev)}
+                  onCreateMindMap={handleCreateMindMap}
+                  mode="offline"
+                />
+             </ErrorBoundary>
           </div>
 
           {/* OPEN FILES VIEWS (Keep-Alive) */}

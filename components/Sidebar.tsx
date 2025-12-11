@@ -1,10 +1,10 @@
 
-import React, { useState } from 'react';
-import { Home, FolderOpen, LogOut, User as UserIcon, X, Palette, ChevronDown, ChevronRight, FileText, Workflow, DownloadCloud, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Home, FolderOpen, LogOut, User as UserIcon, X, Palette, ChevronDown, ChevronRight, FileText, Workflow, DownloadCloud, CheckCircle, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { DriveFile } from '../types';
-import { cacheAppResources } from '../services/offlineService';
+import { cacheAppResources, getOfflineCacheSize } from '../services/offlineService';
 
 interface SidebarProps {
   activeTab: string;
@@ -36,24 +36,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [cacheProgress, setCacheProgress] = useState(0);
   const [downloadSize, setDownloadSize] = useState<string | null>(null);
 
+  // Verificar status do cache ao montar o componente
+  useEffect(() => {
+    let active = true;
+    getOfflineCacheSize().then(size => {
+        if (active && size) {
+            setDownloadSize(size);
+            setCachingStatus('done');
+        }
+    });
+    return () => { active = false; };
+  }, []);
+
   const handleDownloadOffline = async () => {
+    // Se já estiver feito, clicar novamente funciona como um "Atualizar Cache"
     setCachingStatus('caching');
     setCacheProgress(0);
-    setDownloadSize(null);
+    
     try {
         const size = await cacheAppResources((progress) => setCacheProgress(progress));
         setDownloadSize(size);
         setCachingStatus('done');
-        // Keep "Done" state visible longer if we have size info
-        setTimeout(() => {
-             // Optional: Reset to idle or keep done
-             // setCachingStatus('idle'); 
-        }, 5000);
     } catch (e) {
         console.error("Cache failed", e);
-        setCachingStatus('idle');
+        setCachingStatus('idle'); // Volta ao normal em caso de erro
         alert("Erro ao baixar recursos. Verifique sua conexão.");
     }
+  };
+
+  const handleMyFilesClick = () => {
+    if (navigator.onLine) {
+      onSwitchTab('browser');
+    } else {
+      onSwitchTab('offline');
+    }
+    onClose();
   };
 
   // Dynamic classes based on docked state
@@ -112,14 +129,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <button
-              onClick={() => { onSwitchTab('browser'); onClose(); }}
+              onClick={handleMyFilesClick}
               className={`w-full flex items-center gap-5 px-5 py-4 rounded-2xl transition-all duration-200 group sidebar-text ${
-                activeTab === 'browser' 
+                activeTab === 'browser' || activeTab === 'offline' 
                   ? 'bg-brand/10 text-brand font-medium' 
                   : 'text-text-sec hover:bg-white/5 hover:text-text'
               }`}
             >
-              <FolderOpen size={26} className={activeTab === 'browser' ? "fill-brand/20" : ""} />
+              {activeTab === 'offline' ? (
+                 <WifiOff size={26} className="text-brand" />
+              ) : (
+                 <FolderOpen size={26} className={activeTab === 'browser' ? "fill-brand/20" : ""} />
+              )}
               <span className="text-lg">Meus Arquivos</span>
             </button>
 
@@ -138,33 +159,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {/* Offline Actions */}
           <div className="space-y-3 border-t border-border pt-6">
-             <div className="px-4 text-xs font-bold text-text-sec uppercase tracking-wider">Offline</div>
+             <div className="px-4 text-xs font-bold text-text-sec uppercase tracking-wider">Sistema</div>
              <button
               onClick={handleDownloadOffline}
-              disabled={cachingStatus === 'caching' || cachingStatus === 'done'}
+              disabled={cachingStatus === 'caching'}
               className={`w-full flex items-center gap-5 px-5 py-4 rounded-2xl transition-all duration-200 group sidebar-text ${
                   cachingStatus === 'done' 
-                    ? 'bg-green-500/10 text-green-500' 
+                    ? 'bg-green-500/10 text-green-500 border border-green-500/20' 
                     : 'text-text-sec hover:bg-white/5 hover:text-text'
               }`}
             >
               {cachingStatus === 'caching' ? (
                   <Loader2 size={26} className="animate-spin text-brand" />
               ) : cachingStatus === 'done' ? (
-                  <CheckCircle size={26} />
+                  <CheckCircle size={26} className="text-green-500" />
               ) : (
                   <DownloadCloud size={26} />
               )}
               
-              <div className="flex flex-col items-start">
-                  <span className="text-lg">
+              <div className="flex flex-col items-start min-w-0">
+                  <span className={`text-lg font-medium truncate ${cachingStatus === 'done' ? 'text-green-500' : ''}`}>
                       {cachingStatus === 'caching' 
                         ? `Baixando ${cacheProgress}%` 
                         : cachingStatus === 'done' 
-                           ? `Pronto (${downloadSize || 'OK'})` 
+                           ? `Baixado (${downloadSize})` 
                            : 'Baixar Recursos'}
                   </span>
-                  {cachingStatus === 'idle' && <span className="text-xs opacity-60">Disponibilizar App Offline</span>}
+                  <span className={`text-xs ${cachingStatus === 'done' ? 'text-green-500/70' : 'opacity-60'}`}>
+                    {cachingStatus === 'done' 
+                      ? 'App disponível offline' 
+                      : 'Disponibilizar App Offline'
+                    }
+                  </span>
               </div>
             </button>
           </div>
