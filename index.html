@@ -184,6 +184,16 @@
     outline: none;
     font-size: 1.125rem; /* text-lg */
     line-height: 1.75;
+    /* FIX: Ensure content stays within page boundaries */
+    box-sizing: border-box; 
+    width: 100%;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
+    
+    /* Define a cor das "gotas" (handles) e do cursor no editor para SeaGreen */
+    caret-color: #2e8b57;
   }
   
   .ProseMirror h1 { font-size: 2.25rem; font-weight: 800; margin-top: 1.5em; margin-bottom: 0.5em; line-height: 1.1; }
@@ -192,12 +202,57 @@
   .ProseMirror ul, .ProseMirror ol { padding-left: 1.5em; margin-bottom: 1em; }
   .ProseMirror ul { list-style-type: disc; }
   .ProseMirror ol { list-style-type: decimal; }
-  .ProseMirror blockquote { border-left: 4px solid var(--brand); padding-left: 1em; font-style: italic; opacity: 0.8; margin: 1em 0; }
+  
+  /* CITAÇÃO LONGA ABNT */
+  .ProseMirror blockquote {
+    /* Recuo esquerdo de 4 cm */
+    margin-left: 4cm !important;
+    margin-right: 0 !important;
+    /* Separação: 6pt antes e depois */
+    margin-top: 6pt !important;
+    margin-bottom: 6pt !important;
+    
+    padding: 0 !important;
+    border: none !important;
+    
+    /* Fonte e Alinhamento */
+    font-size: 10pt !important;
+    line-height: 1.0 !important; /* Espaçamento simples */
+    text-align: justify !important;
+    font-style: normal !important; /* Sem itálico */
+    opacity: 1 !important;
+  }
+
+  /* Forçar parágrafos internos a obedecerem ao estilo da citação */
+  .ProseMirror blockquote p {
+    font-size: 10pt !important;
+    line-height: 1.0 !important;
+    text-align: justify !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
   .ProseMirror code { background-color: rgba(255, 255, 255, 0.1); padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; font-size: 0.85em; }
   .ProseMirror pre { background-color: #000; padding: 1em; border-radius: 8px; color: #fff; font-family: monospace; overflow-x: auto; margin: 1em 0; }
   .ProseMirror pre code { background: none; padding: 0; }
   .ProseMirror hr { border-color: var(--border-color); margin: 2em 0; }
   
+  /* Checklists */
+  .ProseMirror ul[data-type="taskList"] {
+    list-style: none;
+    padding: 0;
+  }
+  .ProseMirror ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 0.5em;
+  }
+  .ProseMirror ul[data-type="taskList"] li label {
+    margin-right: 0.5em;
+    user-select: none;
+    margin-top: 0.3em;
+  }
+
   .ProseMirror img {
     max-width: 100%;
     height: auto;
@@ -296,12 +351,29 @@
     height: 0;
   }
   
+  /* --- SELEÇÃO GLOBAL (Editor e UI) --- */
+  /* Define o fundo Roxo solicitado e mantém a cor do texto original (visible) */
   ::selection {
+    background: rgba(168, 85, 247, 0.3); 
+    color: inherit;
+  }
+  
+  ::-moz-selection {
+    background: rgba(168, 85, 247, 0.3);
+    color: inherit;
+  }
+
+  /* --- SELEÇÃO ESPECÍFICA PDF (Mantém comportamento original) --- */
+  /* No visualizador de PDF, o texto real é transparente sobre o canvas. 
+     A seleção deve manter essa transparência para não cobrir o texto renderizado. 
+     Mantemos o amarelo padrão para PDF ou ajustamos conforme necessário, 
+     mas a prioridade aqui é não quebrar a lógica de transparência. */
+  .textLayer ::selection {
     background: rgba(255, 255, 0, 0.4); 
     color: transparent;
   }
   
-  ::-moz-selection {
+  .textLayer ::-moz-selection {
     background: rgba(255, 255, 0, 0.4);
     color: transparent;
   }
@@ -365,6 +437,7 @@
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
     "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
     "pdfjs-dist": "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/+esm",
@@ -376,21 +449,31 @@
     "@google/genai": "https://esm.sh/@google/genai",
     "react-window": "https://esm.sh/react-window@1.8.10?external=react,react-dom",
     "react-virtualized-auto-sizer": "https://esm.sh/react-virtualized-auto-sizer@1.0.24?external=react,react-dom",
-    "@tiptap/react": "https://esm.sh/@tiptap/react@2.2.4",
-    "@tiptap/pm": "https://esm.sh/@tiptap/pm@2.2.4",
-    "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2.2.4",
-    "@tiptap/extension-underline": "https://esm.sh/@tiptap/extension-underline@2.2.4",
-    "@tiptap/extension-text-align": "https://esm.sh/@tiptap/extension-text-align@2.2.4",
-    "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2.2.4",
-    "@tiptap/extension-link": "https://esm.sh/@tiptap/extension-link@2.2.4",
-    "@tiptap/extension-table": "https://esm.sh/@tiptap/extension-table@2.2.4",
-    "@tiptap/extension-table-row": "https://esm.sh/@tiptap/extension-table-row@2.2.4",
-    "@tiptap/extension-table-cell": "https://esm.sh/@tiptap/extension-table-cell@2.2.4",
-    "@tiptap/extension-table-header": "https://esm.sh/@tiptap/extension-table-header@2.2.4",
-    "@tiptap/extension-bubble-menu": "https://esm.sh/@tiptap/extension-bubble-menu@2.2.4",
+    "@tiptap/react": "https://esm.sh/@tiptap/react@2.2.4?external=react,react-dom",
+    "@tiptap/pm": "https://esm.sh/@tiptap/pm@2.2.4?external=react,react-dom",
+    "@tiptap/starter-kit": "https://esm.sh/@tiptap/starter-kit@2.2.4?external=react,react-dom",
+    "@tiptap/extension-underline": "https://esm.sh/@tiptap/extension-underline@2.2.4?external=react,react-dom",
+    "@tiptap/extension-text-align": "https://esm.sh/@tiptap/extension-text-align@2.2.4?external=react,react-dom",
+    "@tiptap/extension-image": "https://esm.sh/@tiptap/extension-image@2.2.4?external=react,react-dom",
+    "@tiptap/extension-link": "https://esm.sh/@tiptap/extension-link@2.2.4?external=react,react-dom",
+    "@tiptap/extension-table": "https://esm.sh/@tiptap/extension-table@2.2.4?external=react,react-dom",
+    "@tiptap/extension-table-row": "https://esm.sh/@tiptap/extension-table-row@2.2.4?external=react,react-dom",
+    "@tiptap/extension-table-cell": "https://esm.sh/@tiptap/extension-table-cell@2.2.4?external=react,react-dom",
+    "@tiptap/extension-table-header": "https://esm.sh/@tiptap/extension-table-header@2.2.4?external=react,react-dom",
+    "@tiptap/extension-bubble-menu": "https://esm.sh/@tiptap/extension-bubble-menu@2.2.4?external=react,react-dom",
+    "@tiptap/extension-text-style": "https://esm.sh/@tiptap/extension-text-style@2.2.4?external=react,react-dom",
+    "@tiptap/extension-color": "https://esm.sh/@tiptap/extension-color@2.2.4?external=react,react-dom",
+    "@tiptap/extension-highlight": "https://esm.sh/@tiptap/extension-highlight@2.2.4?external=react,react-dom",
+    "@tiptap/extension-task-list": "https://esm.sh/@tiptap/extension-task-list@2.2.4?external=react,react-dom",
+    "@tiptap/extension-task-item": "https://esm.sh/@tiptap/extension-task-item@2.2.4?external=react,react-dom",
+    "@tiptap/extension-font-family": "https://esm.sh/@tiptap/extension-font-family@2.2.4?external=react,react-dom",
+    "@tiptap/extension-subscript": "https://esm.sh/@tiptap/extension-subscript@2.2.4?external=react,react-dom",
+    "@tiptap/extension-superscript": "https://esm.sh/@tiptap/extension-superscript@2.2.4?external=react,react-dom",
     "katex": "https://esm.sh/katex@0.16.9",
     "mermaid": "https://esm.sh/mermaid@10.9.0",
-    "qrcode": "https://esm.sh/qrcode@1.5.3"
+    "qrcode": "https://esm.sh/qrcode@1.5.3",
+    "mammoth": "https://esm.sh/mammoth@1.7.2",
+    "docx": "https://esm.sh/docx@8.5.0"
   }
 }
 </script>

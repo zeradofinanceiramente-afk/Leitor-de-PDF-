@@ -181,11 +181,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
           </div>
           <div>
              <h3 className="text-2xl font-medium mb-2 text-text">Arquivo Local</h3>
-             <p className="text-base text-text-sec">PDF, Mapa Mental ou Documento</p>
+             <p className="text-base text-text-sec">PDF, DOCX, Mapa</p>
           </div>
           <input 
               type="file" 
-              accept="application/pdf,.mindmap,.umo,application/json" 
+              accept="application/pdf,.docx,.mindmap,.umo,application/json" 
               className="hidden" 
               id="local-upload-dash"
               onChange={onUploadLocal}
@@ -213,7 +213,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ userName, onOpenFile, onUp
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {recents.map((file) => {
                const isMindMap = file.name.endsWith('.mindmap');
-               const isDoc = file.name.endsWith('.umo');
+               const isDoc = file.name.endsWith('.docx') || file.name.endsWith('.umo');
                
                return (
                 <div 

@@ -5,8 +5,10 @@ export const MIME_TYPES = {
   FOLDER: 'application/vnd.google-apps.folder',
   MINDMAP: 'application/json', // Using JSON for mindmaps for compatibility
   UMO_DOC: 'application/umo+json', // Custom mime type for Umo Editor docs (stored as JSON)
+  DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   LEGACY_MINDMAP_EXT: '.mindmap',
-  UMO_DOC_EXT: '.umo'
+  UMO_DOC_EXT: '.umo',
+  DOCX_EXT: '.docx'
 };
 
 export interface DriveFile {

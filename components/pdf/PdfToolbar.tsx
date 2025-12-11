@@ -34,7 +34,7 @@ export const PdfToolbar: React.FC<Props> = ({ onFitWidth }) => {
   };
 
   return (
-    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 bg-zinc-900/90 backdrop-blur-xl border border-white/10 p-2 rounded-full shadow-2xl flex items-center gap-4 text-white animate-in slide-in-from-bottom-4 fade-in duration-500">
+    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 bg-black border border-white/10 p-2 rounded-full shadow-2xl flex items-center gap-4 text-white animate-in slide-in-from-bottom-4 fade-in duration-500">
       <div className="flex items-center gap-1 bg-white/5 p-1 rounded-full">
         <button onClick={() => setActiveTool('cursor')} className={`p-2 rounded-full transition-all ${activeTool === 'cursor' ? 'bg-white text-black shadow-sm' : 'hover:bg-white/10 text-zinc-400'}`} title="Selecionar">
           <MousePointer2 size={18} />

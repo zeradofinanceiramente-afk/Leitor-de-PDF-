@@ -9,24 +9,21 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
+  error: any | null;
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null
-    };
-  }
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: any): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
+  componentDidCatch(error: any, errorInfo: ErrorInfo) {
+    console.error("Uncaught error in ErrorBoundary:", error, errorInfo);
   }
 
   resetErrorBoundary = () => {
@@ -42,6 +39,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return this.props.fallback;
       }
 
+      const errorMessage = this.state.error instanceof Error 
+        ? this.state.error.message 
+        : typeof this.state.error === 'string' 
+            ? this.state.error 
+            : JSON.stringify(this.state.error) || "Erro desconhecido";
+
       return (
         <div className="flex flex-col items-center justify-center h-full w-full p-6 text-center bg-bg text-text animate-in fade-in">
           <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mb-6 border border-red-500/20">
@@ -51,8 +54,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <p className="text-text-sec max-w-md mb-8 leading-relaxed">
             Ocorreu um erro inesperado ao renderizar esta tela.
             <br />
-            <span className="text-xs font-mono bg-surface px-2 py-1 rounded mt-2 inline-block border border-border text-red-400">
-              {this.state.error?.message || "Erro desconhecido"}
+            <span className="text-xs font-mono bg-surface px-2 py-1 rounded mt-2 inline-block border border-border text-red-400 max-w-full overflow-hidden text-ellipsis">
+              {errorMessage}
             </span>
           </p>
           
