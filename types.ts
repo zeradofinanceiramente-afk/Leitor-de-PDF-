@@ -6,11 +6,9 @@ export const MIME_TYPES = {
   MINDMAP: 'application/json', // Using JSON for mindmaps for compatibility
   UMO_DOC: 'application/umo+json', // Custom mime type for Umo Editor docs (stored as JSON)
   DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  CEDITOR: 'application/vnd.canvas-editor+json', // New type for canvas editor
   LEGACY_MINDMAP_EXT: '.mindmap',
   UMO_DOC_EXT: '.umo',
-  DOCX_EXT: '.docx',
-  CEDITOR_EXT: '.ceditor' // New extension
+  DOCX_EXT: '.docx'
 };
 
 export interface DriveFile {

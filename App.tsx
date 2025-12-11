@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { auth } from './firebase';
 import { User, onAuthStateChanged } from 'firebase/auth';
@@ -68,7 +69,6 @@ export default function App() {
           id: fileId,
           name: fileName,
           mimeType: fileName.endsWith(MIME_TYPES.LEGACY_MINDMAP_EXT) ? MIME_TYPES.MINDMAP : 
-                    fileName.endsWith(MIME_TYPES.CEDITOR_EXT) ? MIME_TYPES.CEDITOR :
                     fileName.endsWith(MIME_TYPES.DOCX_EXT) ? MIME_TYPES.DOCX : MIME_TYPES.PDF,
           parents
         };
@@ -233,8 +233,6 @@ export default function App() {
           mimeType = MIME_TYPES.MINDMAP;
       } else if (file.name.endsWith(MIME_TYPES.DOCX_EXT) || file.type.includes('wordprocessingml')) {
           mimeType = MIME_TYPES.DOCX;
-      } else if (file.name.endsWith(MIME_TYPES.CEDITOR_EXT)) {
-          mimeType = MIME_TYPES.CEDITOR;
       }
 
       const newFile: DriveFile = {
@@ -248,6 +246,7 @@ export default function App() {
   };
 
   const handleCreateMindMap = async () => {
+    // Logic similar to existing, just uses new MIME_TYPES
     if (!accessToken || !navigator.onLine) {
         const defaultMap = {
             nodes: [{
@@ -312,30 +311,33 @@ export default function App() {
   };
 
   const handleCreateDocument = async () => {
-      // Create a basic JSON array for canvas-editor
-      const initialContent = [];
-      const contentString = JSON.stringify(initialContent);
+      // Create a basic DOCX blob to start with
+      // The editor will handle empty state, so just metadata is enough, or we can create a dummy blob
+      // Using an empty text/plain blob or special identifier is fine, DocEditor will initialize defaults
+      // But better to mimic a file structure so it saves correctly later.
+      const initialContent = "";
       
-      const blob = new Blob([contentString], { type: 'application/json' });
-      const name = "Novo Documento" + MIME_TYPES.CEDITOR_EXT;
+      const blob = new Blob([initialContent], { type: MIME_TYPES.DOCX });
+      const name = "Novo Documento" + MIME_TYPES.DOCX_EXT;
       
       if (!accessToken || !navigator.onLine) {
           const newFile: DriveFile = {
               id: `local-doc-${Date.now()}`,
               name: name,
-              mimeType: 'application/json',
+              mimeType: MIME_TYPES.DOCX,
               blob: blob
           };
           handleOpenFile(newFile);
       } else {
           setIsCreatingMap(true); // Reuse spinner
           try {
-              const result = await uploadFileToDrive(accessToken, blob, name, [], 'application/json');
+              // Note: We upload a placeholder. The first save from the editor will overwrite this with real .docx binary
+              const result = await uploadFileToDrive(accessToken, blob, name, [], MIME_TYPES.DOCX);
               if (result && result.id) {
                   const newFile: DriveFile = {
                       id: result.id,
                       name: result.name || name,
-                      mimeType: 'application/json'
+                      mimeType: MIME_TYPES.DOCX
                   };
                   handleOpenFile(newFile);
               }
@@ -388,7 +390,7 @@ export default function App() {
                    onToggleMenu={() => {}}
                    onAuthError={handleAuthError}
                 />
-            ) : (activeFile.name.endsWith(MIME_TYPES.DOCX_EXT) || activeFile.mimeType === MIME_TYPES.DOCX || activeFile.name.endsWith(MIME_TYPES.UMO_DOC_EXT) || activeFile.name.endsWith(MIME_TYPES.CEDITOR_EXT)) ? (
+            ) : (activeFile.name.endsWith(MIME_TYPES.DOCX_EXT) || activeFile.mimeType === MIME_TYPES.DOCX || activeFile.name.endsWith(MIME_TYPES.UMO_DOC_EXT)) ? (
                 accessToken && <DocEditor
                    fileId={activeFile.id}
                    fileName={activeFile.name}
@@ -551,7 +553,7 @@ export default function App() {
                         onToggleMenu={() => setIsSidebarOpen(prev => !prev)}
                         onAuthError={handleAuthError}
                     />
-                ) : (file.name.endsWith(MIME_TYPES.DOCX_EXT) || file.mimeType === MIME_TYPES.DOCX || file.name.endsWith(MIME_TYPES.UMO_DOC_EXT) || file.name.endsWith(MIME_TYPES.CEDITOR_EXT)) ? (
+                ) : (file.name.endsWith(MIME_TYPES.DOCX_EXT) || file.mimeType === MIME_TYPES.DOCX || file.name.endsWith(MIME_TYPES.UMO_DOC_EXT)) ? (
                     <DocEditor 
                         fileId={file.id}
                         fileName={file.name}
@@ -596,7 +598,7 @@ export default function App() {
         </div>
       )}
 
-      <input type="file" id="local-upload-hidden" accept="application/pdf,.docx,.mindmap,.umo,.ceditor" onChange={handleLocalUpload} className="hidden" />
+      <input type="file" id="local-upload-hidden" accept="application/pdf,.docx,.mindmap,.umo" onChange={handleLocalUpload} className="hidden" />
     </>
   );
 }
